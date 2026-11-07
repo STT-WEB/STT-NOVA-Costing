@@ -19,7 +19,7 @@ ok((allow.match(/'\d+'\s*:/g) || []).length === 3, 'ALLOW ต้องมี 3 �
 ['6100030', '999999', '888888'].forEach(id => ok(allow.indexOf("'" + id + "'") >= 0, 'ALLOW ต้องมี ' + id));
 const appjs = files.filter(f => /\.js$/.test(f)).map(read).join('\n');
 // ทุกฟังก์ชันที่หน้าเว็บเรียกได้ (ไม่มี _ ท้ายชื่อ) และส่งข้อมูล ต้องเรียก requireAuth_ บรรทัดแรก
-['getSnapshot', 'refreshNow', 'getJobPurchase', 'getJobDays', 'whoAmI'].forEach(fn => {
+['getSnapshot', 'refreshNow', 'getJobPurchase', 'getJobDays', 'whoAmI', 'getStatus'].forEach(fn => {
   const m = appjs.match(new RegExp('function ' + fn + '\\s*\\([^)]*\\)\\s*\\{\\s*\\n\\s*(var s = )?requireAuth_\\('));
   ok(!!m, fn + ' ต้องเรียก requireAuth_ เป็นบรรทัดแรก');
 });

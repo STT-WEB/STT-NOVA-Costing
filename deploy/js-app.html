@@ -74,13 +74,15 @@ function loadSnap() {
     busy(false);
     S.snap = typeof json === 'string' ? JSON.parse(json) : json;
     prep(); renderAll();
+    call('getStatus', S.token).then(function (st) { S.status = st; renderTop(); }).catch(function () {});
   }).catch(function (e) { busy(false); toast('โหลดข้อมูลไม่สำเร็จ: ' + ((e && e.message) || e)); });
 }
 function refreshNow() {
   busy(true, 'กำลังดึงข้อมูลล่าสุดจาก NOVA + HR + JOBTRACK… (ประมาณ 1–2 นาที)');
   call('refreshNow', S.token).then(function (r) {
     if (!r.ok) { busy(false); toast(r.msg); return; }
-    toast('อัปเดตแล้ว · ' + r.jobs + ' จ๊อบ · ใช้เวลา ' + Math.round(r.ms / 1000) + ' วินาที');
+    toast('อัปเดตแล้ว · ' + r.jobs + ' จ๊อบ · ใช้เวลา ' + Math.round(r.ms / 1000) + ' วินาที' +
+      (r.novaPending ? ' · ⚠ NOVA ยังอ่านไม่ครบ ' + r.novaPending + ' ไฟล์ (ไฟล์ใหญ่) — กดอัปเดตอีกครั้ง หรือรอระบบอ่านต่อเองใน 10 นาที' : ''));
     loadSnap();
   }).catch(function (e) { busy(false); toast('อัปเดตไม่สำเร็จ: ' + ((e && e.message) || e)); });
 }
@@ -179,8 +181,13 @@ function renderAll() { renderTop(); renderBar(); renderPage(); }
 function renderTop() {
   var s = S.snap, at = s.builtAt ? new Date(s.builtAt) : null;
   var mins = at ? Math.round((Date.now() - at.getTime()) / 60000) : 999;
+  var er = S.status && S.status.err;
+  var errNew = er && (!s.builtAt || er.at > s.builtAt);
+  var pend = (s.diag.novaFiles || []).filter(function (f) { return f.pending || f.stale; }).length;
   $('updInfo').innerHTML = 'ข้อมูล ณ <b>' + (at ? at.toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '-') + '</b><br>' +
-    (mins > 30 ? '<span class="stale">⚠ ข้อมูลเก่า ' + mins + ' นาที — กดอัปเดต</span>' : 'อัปเดตอัตโนมัติทุก 10 นาที');
+    (errNew ? '<span class="stale" style="color:var(--bad)" title="' + esc(er.msg) + '">❌ อัปเดตล่าสุดไม่สำเร็จ: ' + esc(er.msg.slice(0, 60)) + '</span>'
+     : pend ? '<span class="stale">⏳ NOVA กำลังอ่านต่อ ' + pend + ' ไฟล์</span>'
+     : mins > 30 ? '<span class="stale">⚠ ข้อมูลเก่า ' + mins + ' นาที — กดอัปเดต</span>' : 'อัปเดตอัตโนมัติทุก 10 นาที');
   $('verBadge').textContent = s.version || $('verBadge').textContent;
   var bad = chkCards().filter(function (c) { return c.lv === 'bad'; }).length;
   $('chkN').textContent = bad; $('chkN').classList.toggle('hide', !bad);
@@ -563,11 +570,12 @@ function chkCards() {
   var dup = s.contr.filter(function (c) { return c.dup; }), sus = s.contr.filter(function (c) { return c.suspect; });
   var dupAmt = 0; dup.forEach(function (c) { dupAmt += c.amount; });
   var skipped = (d.novaCancelled || []).map(function (x) { return { file: x.file, tab: x.tab, why: 'แท็บยกเลิก (ไม่นับ)' }; }).concat(d.novaSkipped || []);
-  var novaZero = (d.novaFiles || []).filter(function (f) { return !f.tabs; });
+  var novaZero = (d.novaFiles || []).filter(function (f) { return !f.tabs || f.pending || f.stale; });
   return [
     { k: 'nova0', lv: novaZero.length ? 'bad' : 'ok', t: 'อ่านไฟล์ NOVA', v: novaZero.length ? novaZero.length + ' ไฟล์อ่านไม่ได้' : 'อ่านครบ ' + (d.novaFiles || []).length + ' ไฟล์',
-      d: novaZero.length ? 'ไฟล์ใน REGISTRY ที่ไม่พบแท็บจ๊อบเลย — ต้นทุนจัดซื้อจะขาด' : 'ทุกไฟล์ใน REGISTRY มีแท็บจ๊อบ',
-      cols: [{ k: 'type', t: 'ชนิด' }, { k: 'file', t: 'ไฟล์' }, { k: 'tabs', t: 'แท็บจ๊อบ', type: 'num' }, { k: 'cost', t: 'ต้นทุนรวม', type: 'num', dec: 2, foot: 'sum' }], rows: d.novaFiles || [] },
+      d: novaZero.length ? 'ไฟล์ที่ยังอ่านไม่ได้ / ยังอ่านไม่ทัน — ต้นทุนจัดซื้อของไฟล์นั้นยังไม่ขึ้นหรือเป็นของรอบก่อน' : 'ทุกไฟล์ใน REGISTRY อ่านได้',
+      cols: [{ k: 'type', t: 'ชนิด' }, { k: 'file', t: 'ไฟล์' }, { k: 'tabs', t: 'แท็บจ๊อบ', type: 'num' }, { k: 'cost', t: 'ต้นทุนรวม', type: 'num', dec: 2, foot: 'sum' },
+             { k: 'state', t: 'สถานะการอ่าน', cls: function (v, r) { return r.pending || r.stale || !r.tabs ? 'neg' : ''; } }, { k: 'readAt', t: 'อ่านล่าสุด' }], rows: d.novaFiles || [] },
     { k: 'master', lv: (d.notInMaster || []).length ? 'warn' : 'ok', t: 'จ๊อบรวม 2 ฝั่ง (JOB_MASTER ∪ NOVA)',
       v: nf(d.masterCount || 0) + ' จ๊อบใน JOB_MASTER', d: 'มีต้นทุนแต่ไม่อยู่ใน JOB_MASTER ' + (d.notInMaster || []).length + ' จ๊อบ · ' +
         Object.keys(d.kindCount || {}).map(function (k) { return k + ' ' + nf(d.kindCount[k]); }).join(' · '),

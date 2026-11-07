@@ -25,25 +25,49 @@ function slice(fid, r) {
   while (out.length && !out[out.length - 1].length) out.pop();
   return out;
 }
+let calls = 0, quotaHits = 0, sleeps = 0;
+const DRV = {}, PROPS = {};
 const ctx = {
   console, JSON, Math, Date, Object, Array, String, Number, RegExp, isFinite,
   Sheets: { Spreadsheets: {
     get: (fid) => ({ sheets: Object.keys(NOVA[fid]).map((t, i) => ({ properties: { title: t, sheetId: i } })) }),
     Values: {
-      batchGet: (fid, o) => { if (o.ranges.length > 80) throw new Error('เกิน 80 ช่วง'); return { valueRanges: o.ranges.map(r => ({ range: r, values: slice(fid, r) })) }; },
+      batchGet: (fid, o) => {
+        calls++;
+        if (calls % 7 === 0 && quotaHits < 6) { quotaHits++; throw new Error('Quota exceeded for quota metric Read requests per minute per user'); }  // จำลองโดนโควตา
+        if (o.ranges.length > 120) throw new Error('เกิน 120 ช่วง');
+        return { valueRanges: o.ranges.map(r => ({ range: r, values: slice(fid, r) })) };
+      },
       get: (fid, r) => ({ values: slice(fid, r) })
-    } } }
+    } } },
+  Utilities: { sleep: () => { sleeps++; } },
+  PropertiesService: { getScriptProperties: () => ({ getProperty: k => PROPS[k] || null, setProperty: (k, v) => { PROPS[k] = v; }, deleteProperty: k => { delete PROPS[k]; } }) },
+  DriveApp: {
+    getFileById: id => { if (/^FID_/.test(id)) return { getLastUpdated: () => new Date(1794000000000) };
+      if (!DRV[id]) throw new Error('no file'); return { getBlob: () => ({ getDataAsString: () => DRV[id] }), setContent: c => { DRV[id] = c; } }; },
+    createFile: (n, c) => { const id = 'D' + Object.keys(DRV).length; DRV[id] = c; return { getId: () => id }; }
+  }
 };
 vm.createContext(ctx);
 ['10-engine.js', '02-io.js', '20-build.js'].forEach(f => vm.runInContext(fs.readFileSync(path.join(D, f), 'utf8'), ctx, { filename: f }));
 // REGISTRY จำลอง: 2 ไฟล์
 ctx.novaFiles_ = () => [{ fileType: 'JT', fileId: 'FID_JT', fileName: 'STT-DB-JT-2569' }, { fileType: 'JM', fileId: 'FID_JM', fileName: 'STT-DB-JM-2569' }];
 const nova = vm.runInContext('gatherNova_()', ctx);
+// รอบ 2: ไฟล์ไม่ได้แก้ → ต้องใช้ผลเดิม ไม่ยิง API อ่านใหม่
+const callsBefore = calls;
+const nova2 = vm.runInContext('gatherNova_()', ctx);
+// รอบ 3: หมดเวลาแล้ว + ไฟล์ถูกแก้ → ต้องใช้ผลรอบก่อนแบบ stale ไม่ล้ม
+ctx.DriveApp.getFileById = (orig => id => /^FID_/.test(id) ? { getLastUpdated: () => new Date(1794000099999) } : orig(id))(ctx.DriveApp.getFileById);
+const nova3 = vm.runInContext('gatherNova_(Date.now() - 999999)', ctx);
 const inp = JSON.parse(fs.readFileSync(path.join(DATA, 'fixture.json'), 'utf8'));
 inp.nova = nova;
 const s = ctx.eBuildSnapshot_(inp);
 let fail = 0; const ok = (c, m) => { if (!c) { fail++; console.log('❌ ' + m); } };
 nova.forEach(f => ok(f.tabs.length > 0, f.fileName + ' อ่านได้ 0 แท็บ'));
+ok(quotaHits > 0 && sleeps >= quotaHits, 'ต้องรอแล้วลองใหม่เมื่อโดนโควตา (โดน ' + quotaHits + ' · รอ ' + sleeps + ')');
+ok(calls === callsBefore, 'รอบ 2 ไฟล์ไม่ได้แก้ ต้องไม่อ่านใหม่ (ยิงเพิ่ม ' + (calls - callsBefore) + ')');
+ok(nova2.every(f => /ไม่มีการแก้/.test(f.state) && f.tabs.length > 0), 'รอบ 2 ต้องใช้ผลเดิม');
+ok(nova3.every(f => f.stale && f.tabs.length > 0), 'รอบ 3 หมดเวลา ต้องใช้ผลรอบก่อนแบบ stale');
 ok(nova.every(f => !f.skipped.length), 'มีแท็บที่ข้าม: ' + JSON.stringify(nova.map(f => f.skipped)));
 // เทียบกับ fixture (ที่ make_fixture.py อ่านจาก xlsx ตรง ๆ)
 const fx = JSON.parse(fs.readFileSync(path.join(DATA, 'fixture.json'), 'utf8')).nova;
@@ -52,6 +76,7 @@ nova.forEach(f => f.tabs.forEach(t => t.rows.forEach(r => b += Number(r[2]) || 0
 ok(Math.abs(a - b) < 0.01, 'ยอด NOVA ผ่านโค้ดเซิร์ฟเวอร์ ' + b.toFixed(2) + ' ≠ อ่านตรง ' + a.toFixed(2));
 const j = s.jobs.find(x => x.code === 'JT-69/0044');
 ok(j && Math.abs(j.pTotal - 1111643.3) < 0.02, 'JT-69/0044 ผ่านโค้ดเซิร์ฟเวอร์');
+console.log('API batchGet ' + callsBefore + ' ครั้ง · โดนโควตาจำลอง ' + quotaHits + ' ครั้ง');
 console.log('แท็บที่อ่าน: ' + nova.map(f => f.fileName + ' ' + f.tabs.length).join(' · ') + ' · ยอด ' + b.toLocaleString('en-US', { maximumFractionDigits: 2 }));
 console.log((fail ? '❌' : '✅') + ' sim-gather: ' + (fail ? fail + ' ข้อไม่ผ่าน' : 'ผ่าน'));
 process.exit(fail ? 1 : 0);

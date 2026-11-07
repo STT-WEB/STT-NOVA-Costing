@@ -37,6 +37,7 @@ var google = { script: { run: (function () {
       login: function (e, p) { setTimeout(function () { ok(String(e) === '6100030' ? { ok: true, token: 'a'.repeat(64), name: 'คุณ ศศิภา กัลยาณมิตร' } : { ok: false, msg: 'รหัสพนักงานนี้ไม่มีสิทธิ์เข้าโปรแกรม STT NOVA-Costing' }); }, 150); },
       whoAmI: function () { setTimeout(function () { ok({ name: 'คุณ ศศิภา กัลยาณมิตร' }); }, 50); },
       logout: function () { ok && ok({ ok: true }); },
+      getStatus: function () { setTimeout(function () { ok({ snapAt: '', err: null }); }, 50); },
       getSnapshot: function () { setTimeout(function () { ok(__SNAP); }, 200); },
       refreshNow: function () { setTimeout(function () { ok({ ok: true, jobs: 0, ms: 1000 }); }, 300); },
       getJobPurchase: function (t, c) { setTimeout(function () { ok({ code: c, tabs: __BUY[c] || [], novaUrl: '' }); }, 200); },

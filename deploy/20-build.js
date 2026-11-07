@@ -9,53 +9,70 @@
  *  JOBTRACK: Job_Log_YYYY_MM ทุกเดือน · TIMESHEET_DIRECT…
  */
 
-function gatherNova_() {
-  var files = novaFiles_();
-  return files.map(function (f) {
-    var tabs = listTabs_(f.fileId).filter(function (t) { return eIsNovaJobTab_(t.title); });
-    // รอบ 1: หัวแท็บ (A2:B12) + แถวหัวตาราง (A9:BZ12)
-    var ranges = [];
-    tabs.forEach(function (t) { ranges.push(q_(t.title) + '!A2:B12'); ranges.push(q_(t.title) + '!A9:BZ12'); });
-    var got = batchGet_(f.fileId, ranges);
-    var want = [], meta = [];
-    tabs.forEach(function (t, i) {
-      var head = eNovaHead_(got[i * 2] || []);
-      var hdrBlock = got[i * 2 + 1] || [];
-      var hdrRow = -1, hdr = null;
-      for (var r = 0; r < hdrBlock.length; r++) {
-        if (String((hdrBlock[r] || [])[0] || '').trim() === 'หมวด') { hdrRow = 9 + r; hdr = hdrBlock[r]; break; }
-      }
-      if (!hdr) { meta.push({ t: t, head: head, skip: 'ไม่พบหัวตาราง "หมวด"' }); return; }
-      var c = eNovaCols_(hdr);
-      if (c.cost < 0) { meta.push({ t: t, head: head, skip: 'ไม่พบคอลัมน์ ต้นทุนเข้าจ๊อบ' }); return; }
-      var start = hdrRow + 1;
-      var m = { t: t, head: head, idx: want.length, hasV: c.vendor >= 0 };
-      want.push(q_(t.title) + '!' + colA1_(c.cat) + start + ':' + colA1_(c.cat));
-      want.push(q_(t.title) + '!' + colA1_(c.cost) + start + ':' + colA1_(c.cost));
-      if (c.vendor >= 0) want.push(q_(t.title) + '!' + colA1_(c.vendor) + start + ':' + colA1_(c.vendor));
-      meta.push(m);
-    });
-    // รอบ 2: 3 คอลัมน์ของทุกแท็บ
-    var cols = batchGet_(f.fileId, want);
-    var out = [], skipped = [];
-    meta.forEach(function (m) {
-      if (m.skip) { skipped.push({ tab: m.t.title, why: m.skip }); return; }
-      var cat = cols[m.idx] || [], cost = cols[m.idx + 1] || [], ven = m.hasV ? (cols[m.idx + 2] || []) : [];
-      var n = Math.max(cat.length, cost.length), rows = [];
-      for (var i = 0; i < n; i++) {
-        rows.push([(cat[i] || [])[0], (ven[i] || [])[0], (cost[i] || [])[0]]);
-      }
-      out.push({ title: m.t.title, sheetId: m.t.sheetId, head: m.head, rows: rows });
-    });
-    return { fileType: f.fileType, fileId: f.fileId, fileName: f.fileName, tabs: out, skipped: skipped };
+var NOVA_BUDGET_MS = 230000;     // อ่าน NOVA ได้ไม่เกิน ~4 นาทีต่อรอบ (Apps Script ตัดที่ 6 นาที) — ไฟล์ที่เหลืออ่านต่อรอบถัดไป
+
+/** อ่านไฟล์ NOVA ทุกไฟล์ — ไฟล์ที่ไม่ได้แก้ใช้ผลเดิม · หมดเวลาแล้วไฟล์ที่เหลือใช้ผลเดิม (ถ้ามี) */
+function gatherNova_(t0) {
+  t0 = t0 || Date.now();
+  return novaFiles_().map(function (f) {
+    var stamp = fileStamp_(f.fileId);
+    var c = novaCacheGet_(f.fileId);
+    if (c && stamp && c.stamp === stamp) { c.state = 'ไม่มีการแก้ (ใช้ผลรอบก่อน)'; return c; }
+    if (Date.now() - t0 > NOVA_BUDGET_MS) {
+      if (c) { c.state = 'ข้อมูลรอบก่อน — รออ่านใหม่รอบถัดไป'; c.stale = 1; return c; }
+      return { fileType: f.fileType, fileId: f.fileId, fileName: f.fileName, tabs: [], skipped: [], pending: 1, state: 'ยังอ่านไม่ทัน — อ่านต่อรอบถัดไป' };
+    }
+    var res = readNovaFile_(f);
+    res.stamp = stamp; res.readAt = new Date().toISOString();
+    novaCacheSet_(f.fileId, res);
+    res.state = 'อ่านใหม่';
+    return res;
   });
+}
+
+/** อ่านไฟล์ NOVA 1 ไฟล์: (1) หัวแท็บ+หัวตาราง ช่วงเดียว A2:BZ12 (2) 3 คอลัมน์ หมวด/ต้นทุน/Supplier */
+function readNovaFile_(f) {
+  var tabs = listTabs_(f.fileId).filter(function (t) { return eIsNovaJobTab_(t.title); });
+  var got = batchGet_(f.fileId, tabs.map(function (t) { return q_(t.title) + '!A2:BZ12'; }));
+  var want = [], meta = [];
+  tabs.forEach(function (t, i) {
+    var blk = got[i] || [];
+    var head = eNovaHead_(blk.map(function (r) { return [(r || [])[0], (r || [])[1]]; }));
+    var hdrRow = -1, hdr = null;
+    for (var r = 0; r < blk.length; r++) {
+      if (String((blk[r] || [])[0] || '').trim() === 'หมวด') { hdrRow = 2 + r; hdr = blk[r]; break; }
+    }
+    if (!hdr) { meta.push({ t: t, head: head, skip: 'ไม่พบหัวตาราง "หมวด"' }); return; }
+    var c = eNovaCols_(hdr);
+    if (c.cost < 0) { meta.push({ t: t, head: head, skip: 'ไม่พบคอลัมน์ ต้นทุนเข้าจ๊อบ' }); return; }
+    var start = hdrRow + 1;
+    var m = { t: t, head: head, idx: want.length, hasV: c.vendor >= 0 };
+    want.push(q_(t.title) + '!' + colA1_(c.cat) + start + ':' + colA1_(c.cat));
+    want.push(q_(t.title) + '!' + colA1_(c.cost) + start + ':' + colA1_(c.cost));
+    if (c.vendor >= 0) want.push(q_(t.title) + '!' + colA1_(c.vendor) + start + ':' + colA1_(c.vendor));
+    meta.push(m);
+  });
+  var cols = batchGet_(f.fileId, want);
+  var out = [], skipped = [];
+  meta.forEach(function (m) {
+    if (m.skip) { skipped.push({ tab: m.t.title, why: m.skip }); return; }
+    var cat = cols[m.idx] || [], cost = cols[m.idx + 1] || [], ven = m.hasV ? (cols[m.idx + 2] || []) : [];
+    var n = Math.max(cat.length, cost.length), rows = [];
+    for (var i = 0; i < n; i++) {
+      var cv = (cost[i] || [])[0];
+      if (cv === undefined || cv === '' || cv === 0) continue;          // เก็บเฉพาะบรรทัดที่มีต้นทุน (ไฟล์เล็กลง)
+      rows.push([(cat[i] || [])[0], (ven[i] || [])[0], cv]);
+    }
+    out.push({ title: m.t.title, sheetId: m.t.sheetId, head: m.head, rows: rows });
+  });
+  return { fileType: f.fileType, fileId: f.fileId, fileName: f.fileName, tabs: out, skipped: skipped };
 }
 
 function gatherAll_() {
   var t0 = Date.now(), timing = {};
   var input = { builtAt: new Date().toISOString() };
 
-  input.nova = gatherNova_(); timing.nova = Date.now() - t0;
+  input.nova = gatherNova_(t0); timing.nova = Date.now() - t0;
 
   var t1 = Date.now();
   input.salesJT = readTab_(CFG.MASTER, CFG.TAB.SALES_JT);
@@ -94,6 +111,7 @@ function gatherAll_() {
 function rebuild_() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) return { busy: true };
+  var props = PropertiesService.getScriptProperties();
   try {
     var t0 = Date.now();
     var input = gatherAll_();
@@ -103,10 +121,20 @@ function rebuild_() {
     snap.timing = input._timing; snap.timing.gather = tg; snap.timing.total = Date.now() - t0;
     snap.diag.novaSkipped = [];
     input.nova.forEach(function (f) { (f.skipped || []).forEach(function (s) { s.file = f.fileName; snap.diag.novaSkipped.push(s); }); });
+    snap.diag.novaFiles.forEach(function (x, i) {
+      var f = input.nova[i] || {};
+      x.state = f.state || ''; x.pending = f.pending ? 1 : 0; x.stale = f.stale ? 1 : 0; x.readAt = f.readAt || '';
+    });
     var json = JSON.stringify(snap);
     snapSave_(json);
-    PropertiesService.getScriptProperties().setProperty('SNAP_AT', snap.builtAt);
-    return { ok: true, builtAt: snap.builtAt, ms: snap.timing.total, jobs: snap.jobs.length, size: json.length };
+    props.setProperty('SNAP_AT', snap.builtAt);
+    props.deleteProperty('BUILD_ERR');
+    var pend = input.nova.filter(function (f) { return f.pending || f.stale; }).length;
+    return { ok: true, builtAt: snap.builtAt, ms: snap.timing.total, jobs: snap.jobs.length, size: json.length, novaPending: pend };
+  } catch (e) {
+    // จดข้อผิดพลาดไว้ให้หน้าเว็บโชว์ (เดิมล้มเงียบ ๆ แล้วเว็บยังโชว์ข้อมูลเก่า)
+    props.setProperty('BUILD_ERR', JSON.stringify({ at: new Date().toISOString(), msg: String(e && e.message || e).slice(0, 400) }));
+    throw e;
   } finally {
     lock.releaseLock();
   }
@@ -118,7 +146,15 @@ function ensureTrigger_() {
   if (!has) ScriptApp.newTrigger('autoRebuild').timeBased().everyMinutes(CFG.AUTO_MIN).create();
 }
 
-function autoRebuild() { rebuild_(); }
+function autoRebuild() { try { rebuild_(); } catch (e) { /* จดไว้ใน BUILD_ERR แล้ว */ } }
+
+/** สถานะการอัปเดตล่าสุด (หน้าเว็บเรียกตอนเปิด) */
+function getStatus(token) {
+  requireAuth_(token);
+  var p = PropertiesService.getScriptProperties();
+  var err = p.getProperty('BUILD_ERR');
+  return { snapAt: p.getProperty('SNAP_AT') || '', err: err ? JSON.parse(err) : null };
+}
 
 /* ======================= ฟังก์ชันที่หน้าเว็บเรียก ======================= */
 

@@ -10,29 +10,71 @@ var RAW = { valueRenderOption: 'UNFORMATTED_VALUE', dateTimeRenderOption: 'SERIA
 
 function q_(title) { return "'" + String(title).replace(/'/g, "''") + "'"; }
 
+/**
+ * เรียก Google ซ้ำเมื่อโดนจำกัดโควตา (Sheets API: ~60 ครั้ง/นาที/ผู้ใช้)
+ * บทเรียน v1.1.2: อ่าน NOVA ครบทุกแท็บ (~1,600 แท็บ) ยิงถี่จนโดน "Quota exceeded" → ทั้งรอบล้ม
+ * รอ 5 → 10 → 20 → 40 วินาที แล้วลองใหม่ (สูงสุด 5 ครั้ง)
+ */
+function withRetry_(fn) {
+  var wait = 5000;
+  for (var n = 0; ; n++) {
+    try { return fn(); }
+    catch (e) {
+      var m = String(e && e.message || e);
+      if (n >= 4 || !/quota|rate|429|503|500|backend|timed out|try again|Service invoked too many|unavailable/i.test(m)) throw e;
+      Utilities.sleep(wait + Math.floor(Math.random() * 1000));
+      wait *= 2;
+    }
+  }
+}
+
 /** อ่านทั้งแท็บ (ค่าดิบ) */
 function readTab_(fileId, tab, a1) {
-  var r = Sheets.Spreadsheets.Values.get(fileId, q_(tab) + (a1 ? '!' + a1 : ''), RAW);
+  var r = withRetry_(function () { return Sheets.Spreadsheets.Values.get(fileId, q_(tab) + (a1 ? '!' + a1 : ''), RAW); });
   return (r && r.values) ? r.values : [];
 }
 
 /** รายชื่อแท็บ + sheetId */
 function listTabs_(fileId) {
-  var r = Sheets.Spreadsheets.get(fileId, { fields: 'sheets.properties(sheetId,title)' });
+  var r = withRetry_(function () { return Sheets.Spreadsheets.get(fileId, { fields: 'sheets.properties(sheetId,title)' }); });
   return (r.sheets || []).map(function (s) { return { title: s.properties.title, sheetId: s.properties.sheetId }; });
 }
 
-/** อ่านหลายช่วงในครั้งเดียว (แบ่งชุดละ 80 ช่วง กัน URL ยาวเกิน) → array ของ values ตามลำดับ */
+/** อ่านหลายช่วงในครั้งเดียว (ชุดละ 120 ช่วง) → array ของ values ตามลำดับ */
 function batchGet_(fileId, ranges) {
   var out = [];
-  for (var i = 0; i < ranges.length; i += 80) {
-    var part = ranges.slice(i, i + 80);
-    var r = Sheets.Spreadsheets.Values.batchGet(fileId,
-      { ranges: part, valueRenderOption: RAW.valueRenderOption, dateTimeRenderOption: RAW.dateTimeRenderOption });
+  for (var i = 0; i < ranges.length; i += 120) {
+    var part = ranges.slice(i, i + 120);
+    var r = withRetry_(function () {
+      return Sheets.Spreadsheets.Values.batchGet(fileId,
+        { ranges: part, valueRenderOption: RAW.valueRenderOption, dateTimeRenderOption: RAW.dateTimeRenderOption });
+    });
     var vr = r.valueRanges || [];
     for (var k = 0; k < part.length; k++) out.push((vr[k] && vr[k].values) ? vr[k].values : []);
   }
   return out;
+}
+
+/* ---------------- ที่เก็บผลอ่าน NOVA รายไฟล์ ----------------
+ * ไฟล์ NOVA ไหน "ไม่ได้แก้" ตั้งแต่รอบก่อน (เวลาแก้ล่าสุดเท่าเดิม) → ใช้ผลเดิม ไม่ต้องอ่านใหม่ (เร็ว + ไม่เปลืองโควตา)
+ * เก็บเป็นไฟล์ JSON ใน Drive ของเจ้าของสคริปต์ · map fileId→cacheId ใน Script Properties */
+function novaCacheGet_(fid) {
+  try {
+    var map = JSON.parse(PropertiesService.getScriptProperties().getProperty('NOVA_CACHE') || '{}');
+    if (!map[fid]) return null;
+    return JSON.parse(DriveApp.getFileById(map[fid]).getBlob().getDataAsString('UTF-8'));
+  } catch (e) { return null; }
+}
+function novaCacheSet_(fid, obj) {
+  var p = PropertiesService.getScriptProperties();
+  var map = JSON.parse(p.getProperty('NOVA_CACHE') || '{}');
+  var json = JSON.stringify(obj), f = null;
+  if (map[fid]) { try { f = DriveApp.getFileById(map[fid]); } catch (e) { f = null; } }
+  if (f) f.setContent(json);
+  else { f = DriveApp.createFile('STT-NOVA-Costing-CACHE-' + fid + '.json', json, 'application/json'); map[fid] = f.getId(); p.setProperty('NOVA_CACHE', JSON.stringify(map)); }
+}
+function fileStamp_(fid) {
+  try { return DriveApp.getFileById(fid).getLastUpdated().getTime(); } catch (e) { return 0; }
 }
 
 /** เลขคอลัมน์ (0 = A) → ตัวอักษร */
@@ -72,7 +114,7 @@ function snapSave_(json) {
   if (id) { try { file = DriveApp.getFileById(id); } catch (e) { file = null; } }
   if (file) file.setContent(json);
   else { file = DriveApp.createFile(CFG.SNAP_NAME, json, 'application/json'); p.setProperty('SNAP_FILE_ID', file.getId()); }
-  cachePutBig_('SNAP', json);
+  try { cachePutBig_('SNAP', json); } catch (e) { /* แคชเต็ม/ใหญ่เกิน → ใช้ไฟล์ Drive อย่างเดียว ไม่ให้ทั้งรอบล้ม */ }
 }
 
 function snapLoad_() {
@@ -82,7 +124,7 @@ function snapLoad_() {
   if (!id) return null;
   try {
     var json = DriveApp.getFileById(id).getBlob().getDataAsString('UTF-8');
-    if (json) cachePutBig_('SNAP', json);
+    if (json) { try { cachePutBig_('SNAP', json); } catch (e) {} }
     return json || null;
   } catch (e) { return null; }
 }

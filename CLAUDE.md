@@ -32,6 +32,11 @@ GitHub: `STT-WEB/STT-NOVA-Costing` (เบียร์สร้าง repo เ�
 `อัปเดตระบบ Costing.bat` = git → `node _tests/guard-v100.js` → `clasp push -f` → `clasp deploy` (id ใน deploy/.deployid)
 ครั้งแรก: `สร้างโปรเจกต์ครั้งแรก.bat` (clasp create แล้วคืน appsscript.json ของเรา)
 
+## 3.5 การอ่าน NOVA (v1.1.3)
+- อ่านทีละไฟล์ เก็บผลใน Drive (`STT-NOVA-Costing-CACHE-<fileId>.json`, map ใน Script Property `NOVA_CACHE`) · ไฟล์ไม่ได้แก้ → ใช้ผลเดิม
+- งบเวลา `NOVA_BUDGET_MS` 230 วินาที · เกิน → ไฟล์ที่เหลือใช้ผลเดิม/รอบถัดไป · `withRetry_` รอเมื่อโดนโควตา
+- อัปเดตล้ม → Script Property `BUILD_ERR` · หน้าเว็บเรียก `getStatus` แล้วโชว์แดงบนหัว
+
 ## 4. ทดสอบกับข้อมูลจริง (ในคลาวด์ของ Candy)
 ⚠️ **บทเรียน v1.1.1:** xlsx ที่ export ตัด "/" ออกจากชื่อแท็บ (`JT-69/0001` → `JT-690001`) → make_fixture.py คืน "/" ให้แล้ว
 ต้องรัน `_tests/sim-gather.js` (จำลอง Sheets API + โค้ดเซิร์ฟเวอร์จริง) ทุกครั้งที่แก้ 02-io / 20-build / ตัวแปลงชื่อแท็บ
