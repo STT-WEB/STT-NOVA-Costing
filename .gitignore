@@ -1,0 +1,27 @@
+# ===== STT NOVA-Costing — Git ignore (แบบเดียวกับ NOVA P&S Hub) =====
+# ความลับ clasp (ห้าม commit เด็ดขาด)
+.clasprc.json
+.clasp.json
+deploy/.clasp.json
+deploy/.deployid
+
+# ไฟล์สำรองอัตโนมัติ
+*.BAK
+*.BAK[0-9]*
+*.tmp
+*.orig
+
+# ข้อมูลจริง / ตัวเลขต้นทุน (เป็นข้อมูลลับบริษัท — เข้าได้แค่ 3 ท่าน ไม่ขึ้น GitHub)
+_data/
+fixture.json
+snap.json
+*.xlsx
+preview/
+preview*.html
+
+# Node
+node_modules/
+
+# ไฟล์ระบบ / ชั่วคราว
+Thumbs.db
+.DS_Store

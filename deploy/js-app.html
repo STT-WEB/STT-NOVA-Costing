@@ -1,0 +1,630 @@
+<script>
+/* =====================================================================
+ * STT NOVA-Costing — หน้าเว็บหลัก
+ *  ภาพรวม · ต้นทุนรายจ๊อบ · ค่าแรง HR รายเดือน · ค่าแรงราย Process · กระทบยอด
+ * ===================================================================== */
+var S = {
+  token: '', name: '', snap: null, page: 'ov',
+  view: 'v4', est: true, years: { '69': 1 }, types: {}, q: '', showCats: false, hrMode: 'baht', procLvl: 'sub', procVal: 'baht', chk: ''
+};
+
+var VIEWS = [
+  { k: 'v1', t: '① จัดซื้อ', d: 'ต้นทุนจัดซื้อใน NOVA ทุกหมวด (1–11 รวมผู้รับเหมาหมวด 11)' },
+  { k: 'v2', t: '② HR', d: 'ค่าแรงพนักงาน STT + ผู้รับเหมาฝั่ง HR (ที่ไม่ซ้ำกับ NOVA)' },
+  { k: 'v3', t: '③ จัดซื้อ + ค่าแรง STT', d: 'ต้นทุนจัดซื้อ NOVA ทุกหมวด + ค่าแรงเฉพาะพนักงาน STT (ไม่รวม ผรม ฝั่ง HR)' },
+  { k: 'v4', t: '④ สินค้า + ค่าแรง STT + ผู้รับเหมา', d: 'ต้นทุนเต็ม = สินค้า (หมวด 1–10) + ค่าแรง STT + ผู้รับเหมาทุกทาง (NOVA หมวด 11 + HR ที่ไม่ซ้ำ)' }
+];
+var TYPES = ['JT', 'JM', 'JMI', 'JMS', 'JMC', 'JMT', 'JP', 'FG', 'อื่นๆ'];
+var GOODS_KEYS = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9', 'c10', 'c0'];
+
+/* ---------------- เรียกเซิร์ฟเวอร์ ---------------- */
+function call(fn) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  return new Promise(function (res, rej) {
+    var r = google.script.run.withSuccessHandler(res).withFailureHandler(function (e) {
+      var m = (e && e.message) || String(e);
+      if (/AUTH:/.test(m)) { toast(m.replace('AUTH: ', '')); doLogout(true); }
+      rej(e);
+    });
+    r[fn].apply(r, args);
+  });
+}
+function busy(on, txt) { document.getElementById('busy').classList.toggle('hide', !on); if (txt) document.getElementById('busyTxt').textContent = txt; }
+function toast(t) { var d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(function () { d.remove(); }, 3500); }
+function $(id) { return document.getElementById(id); }
+var esc = GT.esc;
+
+/* ---------------- ล็อกอิน ---------------- */
+function initLogin() {
+  $('lhImg').src = LETTERHEAD_SRC; $('logoImg').src = LOGO_SRC;
+  var tok = ''; try { tok = sessionStorage.getItem('costing_tok') || ''; } catch (e) {}
+  $('btnLogin').onclick = doLogin;
+  $('inPin').onkeydown = function (e) { if (e.key === 'Enter') doLogin(); };
+  $('inEmp').onkeydown = function (e) { if (e.key === 'Enter') $('inPin').focus(); };
+  if (tok) {
+    S.token = tok;
+    call('whoAmI', tok).then(function (w) { S.name = w.name; enterApp(); }).catch(function () { S.token = ''; });
+  }
+}
+function doLogin() {
+  var b = $('btnLogin'); b.disabled = true; $('loginMsg').textContent = '';
+  call('login', $('inEmp').value, $('inPin').value).then(function (r) {
+    b.disabled = false;
+    if (!r.ok) { $('loginMsg').textContent = r.msg; return; }
+    S.token = r.token; S.name = r.name;
+    try { sessionStorage.setItem('costing_tok', r.token); } catch (e) {}
+    $('inPin').value = '';
+    enterApp();
+  }).catch(function (e) { b.disabled = false; $('loginMsg').textContent = (e && e.message) || 'เข้าสู่ระบบไม่สำเร็จ'; });
+}
+function doLogout(silent) {
+  if (S.token && !silent) call('logout', S.token);
+  S.token = ''; S.snap = null;
+  try { sessionStorage.removeItem('costing_tok'); } catch (e) {}
+  $('app').classList.add('hide'); $('login').classList.remove('hide'); $('detail').classList.add('hide');
+}
+function enterApp() {
+  $('login').classList.add('hide'); $('app').classList.remove('hide');
+  $('meName').textContent = S.name; $('meAv').textContent = (S.name.replace(/^คุณ\s*/, '') || '?').charAt(0);
+  loadSnap();
+}
+function loadSnap() {
+  busy(true, 'กำลังโหลดข้อมูลต้นทุน…');
+  call('getSnapshot', S.token).then(function (json) {
+    busy(false);
+    S.snap = typeof json === 'string' ? JSON.parse(json) : json;
+    prep(); renderAll();
+  }).catch(function (e) { busy(false); toast('โหลดข้อมูลไม่สำเร็จ: ' + ((e && e.message) || e)); });
+}
+function refreshNow() {
+  busy(true, 'กำลังดึงข้อมูลล่าสุดจาก NOVA + HR + JOBTRACK… (ประมาณ 1–2 นาที)');
+  call('refreshNow', S.token).then(function (r) {
+    if (!r.ok) { busy(false); toast(r.msg); return; }
+    toast('อัปเดตแล้ว · ' + r.jobs + ' จ๊อบ · ใช้เวลา ' + Math.round(r.ms / 1000) + ' วินาที');
+    loadSnap();
+  }).catch(function (e) { busy(false); toast('อัปเดตไม่สำเร็จ: ' + ((e && e.message) || e)); });
+}
+
+/* ---------------- เตรียมข้อมูล ---------------- */
+function prep() {
+  var s = S.snap;
+  s.jobMap = {};
+  s.jobs.forEach(function (j) {
+    s.jobMap[j.code] = j;
+    j.goods = 0; GOODS_KEYS.forEach(function (k) { j.goods += j.p[k] || 0; });
+    j.yy = (String(j.code).match(/-(\d{2})\//) || [])[1] || '';
+    j.typeG = TYPES.indexOf(j.type) >= 0 ? j.type : 'อื่นๆ';
+    j.status = j.progress || (j.delivery ? '' : '');
+  });
+  s.procByJob = {};
+  s.proc.forEach(function (p) { (s.procByJob[p[0]] = s.procByJob[p[0]] || []).push(p); });
+  s.contrByJob = {};
+  s.contr.forEach(function (c) { (s.contrByJob[c.job] = s.contrByJob[c.job] || []).push(c); });
+  if (!Object.keys(S.types).length) TYPES.forEach(function (t) { S.types[t] = 1; });
+}
+
+/** ต้นทุนตามมุมมองที่เลือก */
+function cost(j, view) {
+  view = view || S.view;
+  var est = S.est ? j.laborEst : 0;
+  if (view === 'v1') return j.goods + j.p.c11;
+  if (view === 'v2') return j.labor + est + j.cHR;
+  if (view === 'v3') return j.goods + j.p.c11 + j.labor + est;
+  return j.goods + j.p.c11 + j.labor + est + j.cHR;
+}
+function laborAll(j) { return j.labor + (S.est ? j.laborEst : 0); }
+
+function jobsInScope() {
+  var q = S.q.trim().toLowerCase();
+  var anyYear = Object.keys(S.years).length;
+  return S.snap.jobs.filter(function (j) {
+    if (anyYear && !S.years[j.yy]) return false;
+    if (!S.types[j.typeG]) return false;
+    if (q && (j.code + ' ' + j.name).toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+}
+
+/* ---------------- แถบตัวเลือกด้านบน ---------------- */
+function renderBar() {
+  var b = $('gbar');
+  if (S.page === 'chk') { b.innerHTML = ''; return; }
+  var years = {}; S.snap.jobs.forEach(function (j) { if (j.yy) years[j.yy] = 1; });
+  var ys = Object.keys(years).sort().reverse();
+  var h = [];
+  if (S.page !== 'hr' && S.page !== 'proc') {
+    h.push('<span class="lbl">มุมมองต้นทุน</span>');
+    VIEWS.forEach(function (v) { h.push('<button class="chip ' + v.k + (S.view === v.k ? ' on' : '') + '" data-view="' + v.k + '" title="' + esc(v.d) + '">' + v.t + '</button>'); });
+  }
+  h.push('<label class="tog" title="เดือนที่ HR ยังไม่ปิดงวด: ชม.จาก JOBTRACK × อัตราเฉลี่ยของจ๊อบ"><input type="checkbox" id="cbEst"' + (S.est ? ' checked' : '') + '>รวมค่าแรงประมาณการ (เดือนที่ HR ยังไม่ปิดงวด)</label>');
+  h.push('<span style="flex-basis:100%;height:0"></span>');
+  h.push('<span class="lbl">ปีจ๊อบ</span>');
+  ys.forEach(function (y) { h.push('<button class="chip' + (S.years[y] ? ' on' : '') + '" data-yy="' + y + '">25' + y + '</button>'); });
+  h.push('<button class="chip' + (!Object.keys(S.years).length ? ' on' : '') + '" data-yy="*">ทุกปี</button>');
+  h.push('<span class="lbl" style="margin-left:10px">ประเภท</span>');
+  TYPES.forEach(function (t) {
+    var n = S.snap.jobs.filter(function (j) { return j.typeG === t && (!Object.keys(S.years).length || S.years[j.yy]); }).length;
+    if (!n) return;
+    h.push('<button class="chip' + (S.types[t] ? ' on' : '') + '" data-ty="' + t + '">' + t + '<span class="k">' + n + '</span></button>');
+  });
+  h.push('<input class="srch" id="gq" placeholder="🔎 ค้นหารหัสจ๊อบ / ชื่อลูกค้า" value="' + esc(S.q) + '">');
+  if (S.page !== 'hr' && S.page !== 'proc') {
+    var vd = VIEWS.filter(function (v) { return v.k === S.view; })[0];
+    h.push('<span class="viewdef" style="flex-basis:100%">📐 ' + esc(vd.d) + (S.est ? ' · รวมประมาณการค่าแรง' : ' · ไม่รวมประมาณการ') + '</span>');
+  }
+  b.innerHTML = h.join('');
+  b.querySelectorAll('[data-view]').forEach(function (x) { x.onclick = function () { S.view = x.getAttribute('data-view'); renderAll(); }; });
+  b.querySelectorAll('[data-yy]').forEach(function (x) {
+    x.onclick = function () {
+      var y = x.getAttribute('data-yy');
+      if (y === '*') S.years = {}; else { if (S.years[y]) delete S.years[y]; else S.years[y] = 1; }
+      renderAll();
+    };
+  });
+  b.querySelectorAll('[data-ty]').forEach(function (x) {
+    x.onclick = function (e) {
+      var t = x.getAttribute('data-ty');
+      if (e.shiftKey || e.ctrlKey || e.metaKey) { S.types = {}; S.types[t] = 1; }    // Ctrl+คลิก = เลือกอันเดียว
+      else if (S.types[t]) delete S.types[t]; else S.types[t] = 1;
+      renderAll();
+    };
+  });
+  $('cbEst').onchange = function () { S.est = this.checked; renderAll(); };
+  var tm = null;
+  $('gq').oninput = function () { var v = this.value; clearTimeout(tm); tm = setTimeout(function () { S.q = v; renderPage(); }, 250); };
+}
+
+function renderAll() { renderTop(); renderBar(); renderPage(); }
+
+function renderTop() {
+  var s = S.snap, at = s.builtAt ? new Date(s.builtAt) : null;
+  var mins = at ? Math.round((Date.now() - at.getTime()) / 60000) : 999;
+  $('updInfo').innerHTML = 'ข้อมูล ณ <b>' + (at ? at.toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '-') + '</b><br>' +
+    (mins > 30 ? '<span class="stale">⚠ ข้อมูลเก่า ' + mins + ' นาที — กดอัปเดต</span>' : 'อัปเดตอัตโนมัติทุก 10 นาที');
+  $('verBadge').textContent = s.version || $('verBadge').textContent;
+  var bad = chkCards().filter(function (c) { return c.lv === 'bad'; }).length;
+  $('chkN').textContent = bad; $('chkN').classList.toggle('hide', !bad);
+}
+
+function renderPage() {
+  ['ov', 'jobs', 'hr', 'proc', 'chk'].forEach(function (p) { $('pg-' + p).classList.toggle('hide', p !== S.page); });
+  GT.closePop();
+  if (S.page === 'ov') renderOverview();
+  else if (S.page === 'jobs') renderJobs();
+  else if (S.page === 'hr') renderHR();
+  else if (S.page === 'proc') renderProc();
+  else renderChk();
+}
+
+/* ---------------- 1) ภาพรวม ---------------- */
+function kpiHtml(cls, l, v, d) { return '<div class="kpi ' + cls + '"><div class="l">' + l + '</div><div class="v">' + v + '</div><div class="d">' + (d || '') + '</div></div>'; }
+
+function renderOverview() {
+  var js = jobsInScope(), parts = viewParts();
+  var sale = 0, saleW = 0, costW = 0, cAll = 0, loss = 0, withSale = 0;
+  var comp = {}; parts.forEach(function (p) { comp[p.k] = 0; });
+  js.forEach(function (j) {
+    var cc = cost(j); cAll += cc; sale += j.sale;
+    var x = partVals(j); parts.forEach(function (p) { comp[p.k] += x[p.k]; });
+    if (j.sale > 0) { withSale++; saleW += j.sale; costW += cc; if (cc > j.sale) loss++; }
+  });
+  var pro = saleW - costW, mg = pct(pro, saleW);
+
+  // รายเดือนตาม "เดือนส่งมอบ" (จ๊อบที่ยังไม่ส่งมอบ = แท่ง "ระหว่างผลิต")
+  var mon = {}, wip = { sale: 0, n: 0 };
+  parts.forEach(function (p) { wip[p.k] = 0; });
+  js.forEach(function (j) {
+    var done = /ส่งมอบ/.test(j.progress || '') && j.delivery;
+    var b = done ? (mon[j.delivery.substr(0, 7)] = mon[j.delivery.substr(0, 7)] || newBucket(parts)) : wip;
+    var x = partVals(j); parts.forEach(function (p) { b[p.k] += x[p.k]; });
+    b.sale += j.sale; b.n++; if (j.sale) { b.sw = (b.sw || 0) + j.sale; b.cw = (b.cw || 0) + cost(j); }
+  });
+  var mk = Object.keys(mon).sort().slice(-12);
+  var nowM = new Date().toISOString().substr(0, 7);
+  var doneM = mk.filter(function (m) { return m < nowM; });           // เทียบเฉพาะเดือนที่จบแล้ว
+  var lastM = doneM[doneM.length - 1], prevM = doneM[doneM.length - 2];
+  function mgOf(b) { return b && b.sw ? pct(b.sw - b.cw, b.sw) : null; }
+  var mL = mgOf(mon[lastM]), mP = mgOf(mon[prevM]);
+  var delta = (mL !== null && mP !== null) ? mL - mP : null;
+  var vt = VIEWS.filter(function (v) { return v.k === S.view; })[0].t;
+
+  var h = ['<div class="ov">'];
+  // ---- แถว 1: ตัวเลขใหญ่ 4 ตัว ----
+  h.push('<div class="ovk">',
+    bigK('sale', 'ราคาขาย (ไม่รวม VAT)', mb(sale), nf(js.length) + ' จ๊อบ · มีราคาขาย ' + nf(withSale)),
+    bigK('cost', 'ต้นทุน · ' + vt, mb(cAll), S.est ? 'รวมค่าแรงประมาณการ ' + mb(comp.est || 0) : 'ไม่รวมประมาณการ'),
+    bigK(pro >= 0 ? 'pro' : 'loss', 'กำไรขั้นต้น', mb(pro), 'คิดเฉพาะจ๊อบที่มีราคาขาย · ขาดทุน ' + loss + ' จ๊อบ'),
+    bigK(mg !== null && mg >= 0 ? 'pro' : 'loss', '% กำไร', pf(mg),
+      lastM ? 'ส่งมอบ ' + thM(lastM) + ' ' + pf(mL) + (delta === null ? '' : ' <b class="' + (delta >= 0 ? 'up' : 'dn') + '">' + (delta >= 0 ? '▲' : '▼') + ' ' + Math.abs(delta).toFixed(1) + ' จุด</b> จาก ' + thM(prevM)) : ''),
+    '</div>');
+
+  // ---- แถว 2 ซ้าย: กราฟรายเดือน ----
+  h.push('<div class="ovg">');
+  h.push('<div class="card ovc"><h3>ต้นทุน vs ราคาขาย ตามเดือนส่งมอบ <span class="h-sub">แท่ง = ต้นทุน · เส้นดำ = ราคาขาย · คลิกแท่งเพื่อดูจ๊อบ</span></h3>' +
+    legendHtml(parts) + '<div class="chartwrap" id="ovChart"></div></div>');
+  // ---- แถว 2 ขวา: จ๊อบเสี่ยง ----
+  var watch = js.filter(function (j) { return j.sale > 0 && cost(j) > 0; }).map(function (j) {
+    var c2 = cost(j); return { j: j, c: c2, p: j.sale - c2, m: pct(j.sale - c2, j.sale) };
+  }).sort(function (a, b) { return a.p - b.p; }).slice(0, 10);
+  h.push('<div class="card ovc"><h3>🔥 จ๊อบเสี่ยง Top 10 <span class="h-sub">กำไรน้อยสุด / ขาดทุนมากสุด (บาท)</span></h3><div class="risk">');
+  var mxL = 1; watch.forEach(function (w) { mxL = Math.max(mxL, Math.abs(w.p)); });
+  watch.forEach(function (w, i) {
+    h.push('<div class="rk" data-job="' + w.j.code + '"><span class="no">' + (i + 1) + '</span><div class="rn"><b>' + esc(w.j.code) + '</b><small>' + esc(w.j.name) + '</small></div>' +
+      '<div class="rb"><i style="width:' + (Math.abs(w.p) / mxL * 100) + '%;background:' + (w.p < 0 ? 'var(--bad)' : 'var(--warn)') + '"></i></div>' +
+      '<div class="rv ' + (w.p < 0 ? 'neg' : '') + '">' + nf(w.p) + '<small>' + pf(w.m) + '</small></div></div>');
+  });
+  if (!watch.length) h.push('<div class="note">ไม่มีจ๊อบที่มีทั้งราคาขายและต้นทุนในขอบเขตนี้</div>');
+  h.push('</div><a class="lnk" id="ovAll" style="margin-top:6px;font-size:12px">ดูทุกจ๊อบเรียงตามกำไร →</a></div>');
+
+  // ---- แถว 3 ซ้าย: โดนัทสัดส่วน ----
+  var tot = 0; parts.forEach(function (p) { tot += comp[p.k]; });
+  h.push('<div class="card ovc"><h3>สัดส่วนต้นทุน <span class="h-sub">' + esc(vt) + '</span></h3><div class="donutrow">' + donut(parts, comp, tot) + '<div class="dleg">');
+  parts.forEach(function (p) {
+    h.push('<div><i style="background:' + p.c + '"></i><span>' + p.t + '</span><b>' + mb(comp[p.k]) + '</b><em>' + pf(pct(comp[p.k], tot), 0) + '</em></div>');
+  });
+  h.push('<div class="dsum"><span>ต้นทุน / ราคาขาย</span><b>' + pf(pct(costW, saleW)) + '</b></div></div></div></div>');
+
+  // ---- แถว 3 ขวา: สถานะข้อมูล ----
+  var cards = chkCards(), nb = cards.filter(function (c) { return c.lv === 'bad'; }), nw = cards.filter(function (c) { return c.lv === 'warn'; });
+  var at = S.snap.builtAt ? new Date(S.snap.builtAt) : null;
+  var cl = S.snap.months.filter(function (m) { return S.snap.closed[m]; });
+  h.push('<div class="card ovc"><h3>สถานะข้อมูล</h3><div class="stat">' +
+    '<div class="st ' + (nb.length ? 'bad' : nw.length ? 'warn' : 'ok') + '" id="ovChk"><b>' + (nb.length ? '❌ ' + nb.length + ' จุดต้องแก้' : nw.length ? '⚠️ ' + nw.length + ' จุดควรตรวจ' : '✅ ข้อมูลตรงทุกจุด') + '</b>' +
+    '<small>' + (nb.length ? nb.map(function (c) { return c.t; }).slice(0, 3).join(' · ') : nw.length ? nw.map(function (c) { return c.t; }).slice(0, 2).join(' · ') : 'กระทบยอดผ่านทั้งหมด') + '</small><span class="go">ไปหน้ากระทบยอด →</span></div>' +
+    '<div class="st"><b>🕒 ' + (at ? at.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.' : '-') + '</b><small>อัปเดตล่าสุด ' + (at ? at.toLocaleDateString('th-TH', { dateStyle: 'medium' }) : '') + ' · อัตโนมัติทุก 10 นาที</small></div>' +
+    '<div class="st"><b>👷 HR ปิดงวดถึง ' + (cl.length ? thM(cl[cl.length - 1]) : '-') + '</b><small>เดือนหลังจากนั้นเป็นค่าแรงประมาณการ (สีส้ม)</small></div>' +
+    '<div class="st"><b>🛒 NOVA ' + nf((S.snap.diag.novaFiles || []).length) + ' ไฟล์ · ' + nf(S.snap.diag.novaTabs) + ' แท็บ</b><small>' + nf(S.snap.diag.novaLines) + ' บรรทัดที่มีต้นทุน</small></div>' +
+    '</div></div>');
+  h.push('</div></div>');
+
+  var pg = $('pg-ov'); pg.innerHTML = h.join('');
+  drawMonthChart($('ovChart'), mk, mon, wip, parts);
+  pg.querySelectorAll('[data-job]').forEach(function (r) { r.onclick = function () { openDetail(r.getAttribute('data-job')); }; });
+  $('ovAll').onclick = function () { GT.state.jobs = { f: {}, sort: { k: 'profit', dir: 1 } }; S.page = 'jobs'; setTab(); renderAll(); };
+  $('ovChk').onclick = function () { S.page = 'chk'; setTab(); renderAll(); };
+}
+
+function newBucket(parts) { var b = { sale: 0, n: 0 }; parts.forEach(function (p) { b[p.k] = 0; }); return b; }
+function partVals(j) { return { goods: j.goods, cn: j.p.c11, labor: j.labor, est: S.est ? j.laborEst : 0, ch: j.cHR }; }
+function bigK(cls, l, v, d) { return '<div class="kpi big ' + cls + '"><div class="l">' + l + '</div><div class="v">' + v + '</div><div class="d">' + (d || '') + '</div></div>'; }
+/** บาท → "125.04 ล้าน" / "850,000" */
+function mb(v) { var a = Math.abs(v); return a >= 1e6 ? (v / 1e6).toFixed(2) + ' ล้าน' : nf(v); }
+var TH_M = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+function thM(m) { return m ? TH_M[+m.substr(5, 2)] + ' ' + String(+m.substr(0, 4) + 543).substr(2) : ''; }
+
+function donut(parts, comp, tot) {
+  var r = 62, c = 2 * Math.PI * r, off = 0, s = ['<svg viewBox="0 0 160 160" class="donut"><circle cx="80" cy="80" r="' + r + '" fill="none" stroke="#F1F0F7" stroke-width="26"/>'];
+  parts.forEach(function (p) {
+    var f = tot ? comp[p.k] / tot : 0; if (f <= 0) return;
+    s.push('<circle cx="80" cy="80" r="' + r + '" fill="none" stroke="' + p.c + '" stroke-width="26" stroke-dasharray="' + (f * c) + ' ' + c + '" stroke-dashoffset="' + (-off * c) + '" transform="rotate(-90 80 80)"><title>' + p.t + ' ' + nf(comp[p.k]) + '</title></circle>');
+    off += f;
+  });
+  s.push('<text x="80" y="76" text-anchor="middle" class="dt1">ต้นทุนรวม</text><text x="80" y="96" text-anchor="middle" class="dt2">' + mb(tot) + '</text></svg>');
+  return s.join('');
+}
+
+/** กราฟแท่งซ้อน (ต้นทุน) + เส้นราคาขาย — วาดด้วย SVG */
+function drawMonthChart(el, mk, mon, wip, parts) {
+  var keys = mk.slice(); if (wip.n) keys.push('WIP');
+  var get = function (k) { return k === 'WIP' ? wip : mon[k]; };
+  if (!keys.length) { el.innerHTML = '<div class="note">ไม่มีข้อมูลในขอบเขตนี้</div>'; return; }
+  var W = el.clientWidth || 700, H = el.clientHeight || 260, L = 54, R = 10, T = 18, B = 30;
+  var mx = 1; keys.forEach(function (k) { var b = get(k), s = 0; parts.forEach(function (p) { s += b[p.k]; }); mx = Math.max(mx, s, b.sale); });
+  var nice = Math.pow(10, Math.floor(Math.log10(mx))); mx = Math.ceil(mx / nice) * nice;
+  var bw = (W - L - R) / keys.length, y = function (v) { return T + (H - T - B) * (1 - v / mx); };
+  var s = ['<svg width="' + W + '" height="' + H + '" class="mchart">'];
+  for (var g = 0; g <= 4; g++) {
+    var gv = mx * g / 4, gy = y(gv);
+    s.push('<line x1="' + L + '" x2="' + (W - R) + '" y1="' + gy + '" y2="' + gy + '" class="grid"/><text x="' + (L - 6) + '" y="' + (gy + 4) + '" text-anchor="end" class="ax">' + (gv >= 1e6 ? (gv / 1e6).toFixed(gv % 1e6 ? 1 : 0) + 'ล.' : Math.round(gv / 1e3) + 'k') + '</text>');
+  }
+  var pts = [];
+  keys.forEach(function (k, i) {
+    var b = get(k), x = L + i * bw + bw * .18, w = bw * .64, acc = 0;
+    s.push('<g class="mbar" data-m="' + k + '"><rect x="' + (L + i * bw) + '" y="' + T + '" width="' + bw + '" height="' + (H - T - B) + '" fill="transparent"/>');
+    parts.forEach(function (p) {
+      var v = b[p.k]; if (v <= 0) return;
+      s.push('<rect x="' + x + '" y="' + y(acc + v) + '" width="' + w + '" height="' + (y(acc) - y(acc + v)) + '" fill="' + p.c + '"><title>' + (k === 'WIP' ? 'ระหว่างผลิต' : thM(k)) + ' · ' + p.t + ' ' + nf(v) + '</title></rect>');
+      acc += v;
+    });
+    var m = b.sw ? pct(b.sw - b.cw, b.sw) : null;
+    if (m !== null) s.push('<text x="' + (x + w / 2) + '" y="' + (Math.min(y(acc), y(b.sale)) - 7) + '" text-anchor="middle" class="ml ' + (k === 'WIP' ? 'wip' : m < 0 ? 'neg' : '') + '">' + m.toFixed(0) + '%' + (k === 'WIP' ? ' (ยังไม่จบ)' : '') + '</text>');
+    s.push('<text x="' + (x + w / 2) + '" y="' + (H - 10) + '" text-anchor="middle" class="ax">' + (k === 'WIP' ? 'ระหว่างผลิต' : thM(k)) + '</text></g>');
+    if (b.sale) pts.push([x + w / 2, y(b.sale), k, b.sale]);
+  });
+  if (pts.length) {
+    s.push('<polyline fill="none" stroke="#1E1B2E" stroke-width="2.5" points="' + pts.map(function (p) { return p[0] + ',' + p[1]; }).join(' ') + '"/>');
+    pts.forEach(function (p) { s.push('<circle cx="' + p[0] + '" cy="' + p[1] + '" r="4" fill="#fff" stroke="#1E1B2E" stroke-width="2"><title>ราคาขาย ' + nf(p[3]) + '</title></circle>'); });
+  }
+  s.push('</svg>');
+  el.innerHTML = s.join('');
+  el.querySelectorAll('.mbar').forEach(function (g) {
+    g.onclick = function () {
+      var m = g.getAttribute('data-m');
+      GT.state.jobs = { f: {}, sort: { k: 'profit', dir: 1 } };
+      if (m === 'WIP') GT.state.jobs.f.progress = { q: 'WIP' };
+      else { var st = {}; st[m] = 1; GT.state.jobs.f.delivery = { set: st }; }
+      S.page = 'jobs'; setTab(); renderAll();
+    };
+  });
+}
+
+function viewParts() {
+  var P = { goods: { k: 'goods', t: 'สินค้า (หมวด 1–10)', c: 'var(--c-goods)' }, cn: { k: 'cn', t: 'ผรม NOVA (หมวด 11)', c: 'var(--c-cn)' },
+            labor: { k: 'labor', t: 'ค่าแรง STT (จริง)', c: 'var(--c-labor)' }, est: { k: 'est', t: 'ค่าแรง (ประมาณการ)', c: 'var(--c-est)' },
+            ch: { k: 'ch', t: 'ผรม ฝั่ง HR (ไม่ซ้ำ)', c: 'var(--c-ch)' } };
+  var v = S.view, out = [];
+  if (v === 'v1') out = [P.goods, P.cn];
+  else if (v === 'v2') out = [P.labor, P.est, P.ch];
+  else if (v === 'v3') out = [P.goods, P.cn, P.labor, P.est];
+  else out = [P.goods, P.cn, P.labor, P.est, P.ch];
+  if (!S.est) out = out.filter(function (p) { return p.k !== 'est'; });
+  return out;
+}
+function partsSum(x, parts) { var s = 0; parts.forEach(function (p) { s += x[p.k] || 0; }); return s; }
+function legendHtml(parts) {
+  return '<div class="legend">' + parts.map(function (p) { return '<span><i style="background:' + p.c + '"></i>' + p.t + '</span>'; }).join('') +
+    '<span><i style="background:var(--ink);width:3px"></i>ราคาขาย</span></div>';
+}
+
+/* ---------------- 2) ต้นทุนรายจ๊อบ ---------------- */
+var TJ = null;
+function statusPill(j) {
+  var s = j.progress || '';
+  if (/ส่งมอบ/.test(s)) return '<span class="pill p-ok">' + esc(s) + '</span>';
+  if (/WIP/i.test(s)) return '<span class="pill p-info">WIP</span>';
+  if (/ยกเลิก/.test(s)) return '<span class="pill p-mute">' + esc(s) + '</span>';
+  return s ? '<span class="pill p-mute">' + esc(s) + '</span>' : '';
+}
+function marginCls(v) { return v === null ? 'dim' : v < 0 ? 'neg' : v < 10 ? '' : 'pos'; }
+
+function jobCols() {
+  var vt = VIEWS.filter(function (v) { return v.k === S.view; })[0].t;
+  var cols = [
+    { k: 'typeG', t: 'ประเภท' },
+    { k: 'code', t: 'JOB CODE', fmt: function (v) { return '<b>' + esc(v) + '</b>'; } },
+    { k: 'name', t: 'ลูกค้า / ชื่องาน', wrap: true },
+    { k: 'progress', t: 'สถานะ', fmt: function (v, j) { return statusPill(j); } },
+    { k: 'start', t: 'วันเริ่ม', fkey: function (j) { return (j.start || '').substr(0, 7); } },
+    { k: 'delivery', t: 'ส่งมอบ', fkey: function (j) { return (j.delivery || '').substr(0, 7); } },
+    { k: 'sale', t: 'ราคาขาย', type: 'num', grp: 'sale', foot: 'sum', tip: 'ไม่รวม VAT · JT จาก Sales Value no vat · JM จาก billaftrDiscAmnt' }
+  ];
+  var showG = S.view !== 'v2';
+  if (showG) {
+    if (S.showCats) {
+      S.snap.cats.forEach(function (c) {
+        if (c.k === 'c11') return;
+        cols.push({ k: 'p_' + c.k, t: c.label.replace(/^(\d+)\.\s*/, '$1.'), type: 'num', grp: 'goods', foot: 'sum', get: function (j) { return j.p[c.k]; } });
+      });
+    }
+    cols.push({ k: 'goods', t: 'สินค้า (หมวด 1–10)', type: 'num', grp: 'goods', foot: 'sum', tip: 'ต้นทุนเข้าจ๊อบใน NOVA หมวด 1–10 + บรรทัดที่ไม่ระบุหมวด' });
+    cols.push({ k: 'cn', t: 'ผรม NOVA (11)', type: 'num', grp: 'cn', foot: 'sum', get: function (j) { return j.p.c11; } });
+  }
+  if (S.view !== 'v1') {
+    cols.push({ k: 'labor', t: 'ค่าแรง STT (จริง)', type: 'num', grp: 'labor', foot: 'sum', tip: 'ACTUAL_WIDE: ยอดยกมา + เดือนที่ HR ปิดงวดแล้ว' });
+    if (S.est) cols.push({ k: 'laborEst', t: 'ค่าแรง ประมาณการ', type: 'num', grp: 'est', foot: 'sum', cls: function (v) { return v ? 'estc' : ''; } });
+  }
+  if (S.view === 'v2' || S.view === 'v4') {
+    cols.push({ k: 'cHR', t: 'ผรม HR (ไม่ซ้ำ)', type: 'num', grp: 'ch', foot: 'sum', tip: 'ยอดผู้รับเหมาฝั่ง HR หักส่วนที่ซ้ำกับ NOVA หมวด 11 แล้ว' });
+  }
+  cols.push({ k: 'cost', t: 'ต้นทุน ' + vt.split(' ')[0], type: 'num', grp: 'tot', foot: 'sum', get: function (j) { return cost(j); }, cls: function () { return 'cost-tot'; } });
+  cols.push({ k: 'profit', t: 'กำไร', type: 'num', foot: 'sum', get: function (j) { return j.sale ? j.sale - cost(j) : null; },
+              cls: function (v) { return v === null ? 'dim' : v < 0 ? 'neg' : 'pos'; } });
+  cols.push({ k: 'margin', t: '% กำไร', type: 'num', dec: 1, get: function (j) { return j.sale ? pct(j.sale - cost(j), j.sale) : null; },
+              fmt: function (v) { return pf(v); }, cls: function (v) { return marginCls(v); },
+              foot: function (rows) { var s = 0, c = 0; rows.forEach(function (j) { if (j.sale) { s += j.sale; c += cost(j); } }); return pf(pct(s - c, s)); } });
+  cols.push({ k: 'laborBudget', t: 'งบค่าแรง', type: 'num', foot: 'sum', tip: 'Sale Budget คอลัมน์ C (Budget labour)' });
+  cols.push({ k: 'lbu', t: '% ค่าแรง/งบ', type: 'num', dec: 1, get: function (j) { return j.laborBudget ? pct(laborAll(j) + j.cHR, j.laborBudget) : null; },
+              fmt: function (v) { return pf(v); }, cls: function (v) { return v === null ? 'dim' : v > 100 ? 'neg' : 'pos'; }, tip: '(ค่าแรง STT + ผรม HR) ÷ งบค่าแรง' });
+  cols.push({ k: 'dDays', t: 'วันทำงาน', type: 'num', tip: 'จำนวนวันที่มีคนลงเวลา (JOBTRACK / Timesheet HR)' });
+  cols.push({ k: 'dPeople', t: 'คน', type: 'num' });
+  cols.push({ k: 'dHours', t: 'ชม.', type: 'num', dec: 1, foot: 'sum' });
+  cols.push({ k: 'flags', t: 'หมายเหตุ', fkey: function (j) { return j.flags.length ? j.flags.join(' · ') : ''; },
+              fmt: function (v, j) { return j.flags.map(function (f) { return '<span class="pill ' + (/ซ้ำ|แบ่ง/.test(f) ? 'p-info' : 'p-warn') + '">' + esc(f) + '</span>'; }).join(''); } });
+  return cols;
+}
+
+function renderJobs() {
+  var pg = $('pg-jobs');
+  if (!pg.querySelector('.tbox')) {
+    pg.innerHTML = '<div class="bar"><button class="chip" id="bCats"></button><button class="chip" id="bClr">ล้างตัวกรองตาราง</button>' +
+      '<button class="chip" id="bCsv">⬇ ดาวน์โหลด CSV (ตามที่กรอง)</button><span class="cnt" id="jCnt"></span>' +
+      '<span class="viewdef">คลิกแถว = ดูรายละเอียดจ๊อบ · ▾ บนหัวคอลัมน์ = กรอง/เรียง แบบ Google Sheets</span></div><div class="tbox" id="tJobs"></div>';
+    $('bCats').onclick = function () { S.showCats = !S.showCats; renderJobs(); };
+    $('bClr').onclick = function () { if (TJ) { TJ.clear(); jCnt(); } };
+    $('bCsv').onclick = function () { if (TJ) csv(TJ, 'STT-NOVA-Costing-jobs.csv'); };
+  }
+  $('bCats').textContent = S.showCats ? '➖ ซ่อน 10 หมวดจัดซื้อ' : '➕ แสดงแยก 10 หมวดจัดซื้อ';
+  $('bCats').classList.toggle('on', S.showCats);
+  TJ = GT.create($('tJobs'), { id: 'jobs', cols: jobCols(), rows: jobsInScope(), frozen: 2, onRow: function (j) { openDetail(j.code); }, onChange: jCnt });
+  jCnt();
+}
+function jCnt() { if (TJ) $('jCnt').textContent = 'แสดง ' + nf(TJ.view.length) + ' / ' + nf(TJ.rows.length) + ' จ๊อบ'; }
+
+function csv(T, name) {
+  var cols = T.cols, rows = T.view;
+  var out = [cols.map(function (c) { return '"' + c.t.replace(/"/g, '""') + '"'; }).join(',')];
+  rows.forEach(function (r) {
+    out.push(cols.map(function (c) {
+      var v = c.get ? c.get(r) : r[c.k];
+      if (c.k === 'flags') v = (r.flags || []).join(' · ');
+      if (v === null || v === undefined) v = '';
+      if (typeof v === 'number') return String(Math.round(v * 100) / 100);
+      return '"' + String(v).replace(/"/g, '""') + '"';
+    }).join(','));
+  });
+  var blob = new Blob(['﻿' + out.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+}
+
+/* ---------------- 3) ค่าแรง HR รายเดือน (Pivot เหมือน ACTUAL_WIDE) ---------------- */
+var TH = null;
+function renderHR() {
+  var pg = $('pg-hr');
+  if (!pg.querySelector('.tbox')) {
+    pg.innerHTML = '<div class="bar"><span class="lbl">แสดงเป็น</span><button class="chip" data-m="baht">บาท</button><button class="chip" data-m="hrs">ชม. (ทางการ HR)</button>' +
+      '<button class="chip" data-m="ppl">คน (ทางการ HR)</button><button class="chip" id="hClr">ล้างตัวกรอง</button><button class="chip" id="hCsv">⬇ CSV</button>' +
+      '<span class="viewdef">🟩 เดือนที่ HR ปิดงวดแล้ว = ตรงเงินเดือน · 🟧 = ประมาณการ (ยังไม่ปิดงวด) · คลิกแถว = ดูรายละเอียด</span></div><div class="tbox" id="tHR"></div>';
+    pg.querySelectorAll('[data-m]').forEach(function (b) { b.onclick = function () { S.hrMode = b.getAttribute('data-m'); renderHR(); }; });
+    $('hClr').onclick = function () { if (TH) TH.clear(); };
+    $('hCsv').onclick = function () { if (TH) csv(TH, 'STT-NOVA-Costing-HR.csv'); };
+  }
+  pg.querySelectorAll('[data-m]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-m') === S.hrMode); });
+  var md = S.hrMode, ms = S.snap.months, closed = S.snap.closed;
+  var cols = [
+    { k: 'typeG', t: 'ประเภท' },
+    { k: 'code', t: 'JOB CODE', fmt: function (v) { return '<b>' + esc(v) + '</b>'; } },
+    { k: 'name', t: 'ลูกค้า / ชื่องาน', wrap: true },
+    { k: 'progress', t: 'สถานะ', fmt: function (v, j) { return statusPill(j); } }
+  ];
+  if (md === 'baht') cols.push({ k: 'laborCF', t: 'ยอดยกมา 2025', type: 'num', foot: 'sum' });
+  ms.forEach(function (m) {
+    var isC = !!closed[m];
+    cols.push({ k: 'm' + m, t: m + (isC ? '' : ' ⏳'), type: 'num', dec: md === 'hrs' ? 1 : 0, grp: isC ? 'labor' : 'est', foot: 'sum',
+      tip: isC ? 'HR ปิดงวดแล้ว' : 'HR ยังไม่ปิดงวด — ตัวเลขเป็นประมาณการ',
+      get: function (j) {
+        if (md === 'hrs') return (j.srcM[m] || [])[0] || 0;
+        if (md === 'ppl') return (j.srcM[m] || [])[1] || 0;
+        return isC ? (j.laborM[m] || 0) : (S.est ? (j.laborEstM[m] || 0) : 0);
+      },
+      cls: function (v) { return !isC && v ? 'estc' : ''; } });
+  });
+  if (md === 'baht') {
+    cols.push({ k: 'labor', t: 'รวมจริง', type: 'num', grp: 'labor', foot: 'sum' });
+    cols.push({ k: 'laborEst', t: 'ประมาณการ', type: 'num', grp: 'est', foot: 'sum', cls: function (v) { return v ? 'estc' : ''; } });
+    cols.push({ k: 'lt', t: 'รวมทั้งหมด', type: 'num', grp: 'tot', foot: 'sum', get: function (j) { return laborAll(j); } });
+    cols.push({ k: 'cHR', t: 'ผรม HR (ไม่ซ้ำ)', type: 'num', grp: 'ch', foot: 'sum' });
+    cols.push({ k: 'laborBudget', t: 'งบค่าแรง', type: 'num', foot: 'sum' });
+    cols.push({ k: 'estLabor', t: 'Est. Budget', type: 'num', foot: 'sum', tip: 'แท็บ Estimate Budget' });
+    cols.push({ k: 'lbu', t: '% ใช้งบ', type: 'num', dec: 1, get: function (j) { return j.laborBudget ? pct(laborAll(j) + j.cHR, j.laborBudget) : null; },
+      fmt: function (v) { return pf(v); }, cls: function (v) { return v === null ? 'dim' : v > 100 ? 'neg' : 'pos'; } });
+    cols.push({ k: 'rate', t: 'บาท/ชม.', type: 'num', dec: 2, tip: 'ต้นทุนเฉลี่ยต่อชั่วโมงของจ๊อบ (จาก SRC ของ HR) ใช้คิดประมาณการ' });
+  } else {
+    cols.push({ k: 'srcHours', t: md === 'hrs' ? 'รวม ชม.' : 'คนสูงสุด/เดือน', type: 'num', dec: 1, foot: md === 'hrs' ? 'sum' : null,
+      get: function (j) { return md === 'hrs' ? j.srcHours : j.srcPeople; } });
+  }
+  var rows = jobsInScope().filter(function (j) { return j.labor || j.laborEst || j.laborCF || Object.keys(j.laborM).length || j.srcHours; });
+  TH = GT.create($('tHR'), { id: 'hr-' + md, cols: cols, rows: rows, frozen: 2, onRow: function (j) { openDetail(j.code, 'hr'); } });
+}
+
+/* ---------------- 4) ค่าแรงราย Process ---------------- */
+var TP = null;
+function renderProc() {
+  var pg = $('pg-proc');
+  if (!pg.querySelector('.tbox')) {
+    pg.innerHTML = '<div class="bar"><span class="lbl">ระดับ</span><button class="chip" data-l="cat">หมวด Process</button><button class="chip" data-l="sub">งานย่อย</button>' +
+      '<span class="lbl" style="margin-left:8px">ค่า</span><button class="chip" data-v="baht">บาท</button><button class="chip" data-v="hrs">ชั่วโมง</button>' +
+      '<button class="chip" id="pClr">ล้างตัวกรอง</button><button class="chip" id="pCsv">⬇ CSV</button></div>' +
+      '<div class="note blue">ค่าแรงราย Process = ค่าแรงของจ๊อบในเดือนนั้น (ACTUAL_WIDE) × ชม.ของ Process ÷ ชม.รวมของจ๊อบเดือนนั้น → ยอดรวมทุก Process เท่ากับเงินเดือนที่จ่ายจริงเป๊ะ · ' +
+      'งวด ส.ค. 69 ใช้ Timesheet ของ HR (ตรงกับ SRC) งวดอื่นใช้ JOBTRACK · ก่อน พ.ค. 69 ยังไม่มีรายละเอียดรายวัน</div><div class="tbox" id="tProc"></div>';
+    pg.querySelectorAll('[data-l]').forEach(function (b) { b.onclick = function () { S.procLvl = b.getAttribute('data-l'); renderProc(); }; });
+    pg.querySelectorAll('[data-v]').forEach(function (b) { b.onclick = function () { S.procVal = b.getAttribute('data-v'); renderProc(); }; });
+    $('pClr').onclick = function () { if (TP) TP.clear(); };
+    $('pCsv').onclick = function () { if (TP) csv(TP, 'STT-NOVA-Costing-process.csv'); };
+  }
+  pg.querySelectorAll('[data-l]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-l') === S.procLvl); });
+  pg.querySelectorAll('[data-v]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-v') === S.procVal); });
+  var inScope = {}; jobsInScope().forEach(function (j) { inScope[j.code] = 1; });
+  var agg = {}, months = {};
+  S.snap.proc.forEach(function (p) {
+    if (!inScope[p[0]]) return;
+    if (p[8] && !S.est) return;
+    var key = S.procLvl === 'cat' ? p[2] : p[2] + ' › ' + p[3];
+    var a = agg[key] = agg[key] || { cat: p[2], sub: S.procLvl === 'cat' ? '' : p[3], jobs: {}, h: 0, c: 0, est: 0, m: {} };
+    a.jobs[p[0]] = 1; a.h += p[4]; a.c += p[7]; if (p[8]) a.est += p[7];
+    var v = S.procVal === 'hrs' ? p[4] : p[7];
+    a.m[p[1]] = (a.m[p[1]] || 0) + v; months[p[1]] = 1;
+  });
+  var rows = Object.keys(agg).map(function (k) { var a = agg[k]; a.nJobs = Object.keys(a.jobs).length; return a; });
+  var ms = Object.keys(months).sort();
+  var cols = [{ k: 'cat', t: 'หมวด Process' }];
+  if (S.procLvl === 'sub') cols.push({ k: 'sub', t: 'งานย่อย', wrap: true });
+  cols.push({ k: 'nJobs', t: 'จำนวนจ๊อบ', type: 'num' });
+  ms.forEach(function (m) {
+    var isC = !!S.snap.closed[m];
+    cols.push({ k: 'm' + m, t: m + (isC ? '' : ' ⏳'), type: 'num', dec: S.procVal === 'hrs' ? 1 : 0, grp: isC ? 'labor' : 'est', foot: 'sum',
+      get: function (a) { return a.m[m] || 0; }, cls: function (v) { return !isC && v ? 'estc' : ''; } });
+  });
+  cols.push({ k: 'h', t: 'รวม ชม.', type: 'num', dec: 1, foot: 'sum' });
+  cols.push({ k: 'c', t: 'รวม บาท', type: 'num', grp: 'tot', foot: 'sum' });
+  cols.push({ k: 'est', t: 'ในนั้นเป็นประมาณการ', type: 'num', grp: 'est', foot: 'sum', cls: function (v) { return v ? 'estc' : ''; } });
+  cols.push({ k: 'rph', t: 'บาท/ชม.', type: 'num', dec: 2, get: function (a) { return a.h ? a.c / a.h : 0; } });
+  TP = GT.create($('tProc'), { id: 'proc-' + S.procLvl + S.procVal, cols: cols, rows: rows, frozen: 1 });
+}
+
+/* ---------------- 5) กระทบยอด ---------------- */
+function chkCards() {
+  var s = S.snap, d = s.diag;
+  var noSale = s.jobs.filter(function (j) { return !j.sale && (j.goods + j.p.c11 + j.labor + j.cHR) > 0 && (j.type === 'JT' || j.type.indexOf('JM') === 0); });
+  var mBad = s.monthCheck.filter(function (m) { return m.closed && Math.abs(m.diff) > 1; });
+  var cov = s.coverage.filter(function (c) { return c[4] < 80 && c[1] >= '2026-05'; });
+  var dup = s.contr.filter(function (c) { return c.dup; }), sus = s.contr.filter(function (c) { return c.suspect; });
+  var dupAmt = 0; dup.forEach(function (c) { dupAmt += c.amount; });
+  var skipped = (d.novaCancelled || []).map(function (x) { return { file: x.file, tab: x.tab, why: 'แท็บยกเลิก (ไม่นับ)' }; }).concat(d.novaSkipped || []);
+  return [
+    { k: 'mon', lv: mBad.length ? 'bad' : 'ok', t: 'ค่าแรง HR รายเดือน', v: mBad.length ? mBad.length + ' เดือนไม่ตรง' : 'ตรงทุกเดือน', d: 'แถว "HR ใส่ตัวเลข" vs ผลรวมทุกจ๊อบใน ACTUAL_WIDE',
+      cols: [{ k: 'm', t: 'เดือน' }, { k: 'st', t: 'งวด', get: function (r) { return r.closed ? 'ปิดแล้ว' : 'ยังไม่ปิด'; } }, { k: 'hrInput', t: 'HR ใส่ตัวเลข', type: 'num', dec: 2 },
+             { k: 'sumJobs', t: 'ผลรวมทุกจ๊อบ', type: 'num', dec: 2 }, { k: 'diff', t: 'ส่วนต่าง', type: 'num', dec: 2, cls: function (v) { return Math.abs(v) > 1 ? 'neg' : ''; } },
+             { k: 'srcCost', t: 'ผลรวม SRC', type: 'num', dec: 2 }, { k: 'srcHours', t: 'ชม. SRC', type: 'num', dec: 1 }, { k: 'est', t: 'ประมาณการ', type: 'num', dec: 2 }], rows: s.monthCheck },
+    { k: 'svw', lv: (d.srcVsWide || []).length ? 'bad' : 'ok', t: 'ค่าแรงรายจ๊อบ: ACTUAL_WIDE ≠ SRC', v: (d.srcVsWide || []).length + ' จ๊อบ-เดือน', d: 'ชี้ว่าส่วนต่างรายเดือนมาจากจ๊อบไหน',
+      cols: [{ k: 'm', t: 'เดือน' }, { k: 'job', t: 'JOB' }, { k: 'wide', t: 'ACTUAL_WIDE', type: 'num', dec: 2, foot: 'sum' }, { k: 'src', t: 'SRC', type: 'num', dec: 2, foot: 'sum' },
+             { k: 'diff', t: 'ส่วนต่าง', type: 'num', dec: 2, foot: 'sum', cls: function () { return 'neg'; } }], rows: d.srcVsWide || [] },
+    { k: 'dup', lv: 'ok', t: 'ผรม ซ้ำ NOVA ↔ HR (ตัดออกแล้ว)', v: dup.length + ' รายการ', d: 'ยอดที่ไม่นับซ้ำ ' + nf(dupAmt) + ' บาท', cols: contrCols(), rows: dup },
+    { k: 'sus', lv: sus.length ? 'warn' : 'ok', t: 'ผรม สงสัยซ้ำ (ยังนับอยู่)', v: sus.length + ' รายการ', d: 'ยอดตรงกับ NOVA แต่ชื่อผู้รับเหมาไม่ตรง — ให้จัดซื้อ/HR ตรวจ', cols: contrCols(), rows: sus },
+    { k: 'gap', lv: (d.contrGap || []).length ? 'bad' : 'ok', t: 'ผรม HR: ยอดรวม ≠ รายบรรทัด', v: (d.contrGap || []).length + ' จ๊อบ', d: 'ACTUAL_WIDE/ตารางสรุป มียอด แต่ตารางรายบรรทัดไม่มี',
+      cols: [{ k: 'job', t: 'JOB' }, { k: 'official', t: 'ยอดทางการ HR', type: 'num', dec: 2 }, { k: 'pivot', t: 'ตารางสรุปขวา', type: 'num', dec: 2 }, { k: 'lines', t: 'ผลรวมรายบรรทัด', type: 'num', dec: 2 }, { k: 'gap', t: 'ไม่มีรายละเอียด', type: 'num', dec: 2, cls: function () { return 'neg'; } }], rows: d.contrGap || [] },
+    { k: 'nojob', lv: (d.contrHRnoJob || []).length ? 'warn' : 'ok', t: 'ผรม HR ที่ไม่ใช่จ๊อบ', v: (d.contrHRnoJob || []).length + ' รายการ', d: 'เช่น โรงงาน / งานซ่อมอาคาร — ไม่นับเข้าจ๊อบ',
+      cols: [{ k: 'job', t: 'รหัส' }, { k: 'vendor', t: 'ผู้รับเหมา' }, { k: 'desc', t: 'รายละเอียด', wrap: true }, { k: 'amount', t: 'ยอด', type: 'num', dec: 2, foot: 'sum' }], rows: d.contrHRnoJob || [] },
+    { k: 'units', lv: (d.novaUnitsMismatch || []).length ? 'warn' : 'ok', t: 'NOVA: จำนวนคันไม่ตรงชื่อแท็บ', v: (d.novaUnitsMismatch || []).length + ' แท็บ', d: 'ระบบหารตามจำนวนจ๊อบในชื่อแท็บ',
+      cols: [{ k: 'file', t: 'ไฟล์' }, { k: 'tab', t: 'แท็บ' }, { k: 'tabJobs', t: 'จ๊อบในชื่อแท็บ', type: 'num' }, { k: 'totalJob', t: 'TOTAL JOB (คัน)', type: 'num' }], rows: d.novaUnitsMismatch || [] },
+    { k: 'nocat', lv: (d.novaNoCat || []).length ? 'warn' : 'ok', t: 'NOVA: บรรทัดไม่ระบุหมวด', v: (d.novaNoCat || []).length + ' แท็บ', d: 'มีต้นทุนแต่ช่อง "หมวด" ว่าง — นับเป็น "ไม่ระบุหมวด"',
+      cols: [{ k: 'file', t: 'ไฟล์' }, { k: 'tab', t: 'แท็บ' }, { k: 'amount', t: 'ยอด', type: 'num', dec: 2, foot: 'sum' }], rows: d.novaNoCat || [] },
+    { k: 'nosale', lv: noSale.length ? 'warn' : 'ok', t: 'จ๊อบมีต้นทุน แต่ไม่พบราคาขาย', v: noSale.length + ' จ๊อบ', d: 'JT/JM ที่ไม่มีใน Budget Cost Sales',
+      cols: [{ k: 'code', t: 'JOB' }, { k: 'name', t: 'ลูกค้า', wrap: true }, { k: 'progress', t: 'สถานะ' }, { k: 'c', t: 'ต้นทุนเต็ม', type: 'num', foot: 'sum', get: function (j) { return cost(j, 'v4'); } }], rows: noSale, job: 1 },
+    { k: 'hrdup', lv: (d.hrDupJobs || []).length ? 'bad' : 'ok', t: 'ACTUAL_WIDE: รหัสซ้ำมีตัวเลข 2 แถว', v: (d.hrDupJobs || []).length + ' จ๊อบ', d: 'เสี่ยงนับค่าแรงซ้ำ — ให้ HR ตรวจ',
+      cols: [{ k: 'code', t: 'JOB' }, { k: 'labor', t: 'ค่าแรงที่นับ', type: 'num', get: function (r) { var j = s.jobMap[r.code]; return j ? j.labor : 0; } }], rows: (d.hrDupJobs || []).map(function (c) { return { code: c }; }), job: 1 },
+    { k: 'tot', lv: (d.hrTotalColDiff || []).length ? 'bad' : 'ok', t: 'ACTUAL_WIDE: คอลัมน์ Total ≠ ผลรวมเดือน', v: (d.hrTotalColDiff || []).length + ' จ๊อบ', d: 'ยกมา + 12 เดือน ต้องเท่ากับ Total ค่าแรงพนักงาน STT',
+      cols: [{ k: 'job', t: 'JOB' }, { k: 'sumMonths', t: 'ผลรวมเดือน', type: 'num', dec: 2 }, { k: 'totalCol', t: 'คอลัมน์ Total', type: 'num', dec: 2 }], rows: d.hrTotalColDiff || [] },
+    { k: 'cov', lv: cov.length ? 'warn' : 'ok', t: 'ข้อมูลรายวันไม่ครบ (< 80%)', v: cov.length + ' จ๊อบ-เดือน', d: 'ชม.ในข้อมูลรายวัน เทียบ ชม.ทางการของ HR (ตั้งแต่ พ.ค. 69)',
+      cols: [{ k: '0', t: 'JOB', get: function (r) { return r[0]; } }, { k: '1', t: 'เดือน', get: function (r) { return r[1]; } }, { k: '2', t: 'ชม. HR', type: 'num', dec: 1, get: function (r) { return r[2]; } },
+             { k: '3', t: 'ชม. รายวัน', type: 'num', dec: 1, get: function (r) { return r[3]; } }, { k: '4', t: '% ครอบคลุม', type: 'num', dec: 1, get: function (r) { return r[4]; }, fmt: function (v) { return pf(v); } }], rows: cov },
+    { k: 'unk', lv: (d.detailUnknownJobs || []).length ? 'warn' : 'ok', t: 'รหัสจ๊อบแปลกใน JOBTRACK', v: (d.detailUnknownJobs || []).length + ' รหัส', d: 'ลงเวลาแต่รหัสจ๊อบผิดรูปแบบ — ไม่นับเข้าจ๊อบ',
+      cols: [{ k: 'job', t: 'รหัสที่ลงไว้' }, { k: 'hours', t: 'ชม.', type: 'num', dec: 1, foot: 'sum' }], rows: d.detailUnknownJobs || [] },
+    { k: 'skip', lv: skipped.length ? 'warn' : 'ok', t: 'NOVA: แท็บที่ไม่ได้นับ', v: skipped.length + ' แท็บ', d: 'แท็บยกเลิก / อ่านหัวตารางไม่ได้',
+      cols: [{ k: 'file', t: 'ไฟล์' }, { k: 'tab', t: 'แท็บ' }, { k: 'why', t: 'เหตุผล' }], rows: skipped },
+    { k: 'src', lv: 'ok', t: 'แหล่งข้อมูลที่อ่าน', v: (d.novaFiles || []).length + ' ไฟล์ NOVA', d: 'บรรทัด NOVA ' + nf(d.novaLines) + ' · รายวัน ' + nf(d.detailRows) + ' แถว',
+      cols: [{ k: 'a', t: 'แหล่ง' }, { k: 'b', t: 'ไฟล์/แท็บ' }, { k: 'c', t: 'จำนวน', type: 'num' }, { k: 'd', t: 'ยอดเงิน', type: 'num', dec: 2 }],
+      rows: (d.novaFiles || []).map(function (f) { return { a: 'NOVA ' + f.type, b: f.file, c: f.tabs, d: f.cost }; })
+        .concat((d.detailSources || []).map(function (x) { return { a: x.src || '', b: x.tab + (x.period ? ' (งวด ' + x.period + ')' : ''), c: x.rows, d: 0 }; })) }
+  ];
+}
+function contrCols() {
+  return [{ k: 'job', t: 'JOB' }, { k: 'src', t: 'แหล่ง' }, { k: 'vendor', t: 'ผู้รับเหมา' }, { k: 'desc', t: 'รายละเอียด', wrap: true },
+          { k: 'amount', t: 'ยอด', type: 'num', dec: 2, foot: 'sum' }, { k: 'match', t: 'เหตุผลที่จับคู่', wrap: true }];
+}
+function renderChk() {
+  var cards = chkCards(), pg = $('pg-chk');
+  if (!S.chk) S.chk = (cards.filter(function (c) { return c.lv === 'bad'; })[0] || cards[0]).k;
+  var h = ['<div class="chk-grid">'];
+  cards.forEach(function (c) {
+    h.push('<div class="chk ' + (c.lv === 'ok' ? '' : c.lv) + (S.chk === c.k ? ' on' : '') + '" data-c="' + c.k + '"><div class="t">' +
+      (c.lv === 'bad' ? '❌ ' : c.lv === 'warn' ? '⚠️ ' : '✅ ') + c.t + '</div><div class="v">' + c.v + '</div><div class="d">' + c.d + '</div></div>');
+  });
+  h.push('</div><div class="tbox" id="tChk" style="min-height:260px"></div>');
+  pg.innerHTML = h.join('');
+  pg.querySelectorAll('[data-c]').forEach(function (x) { x.onclick = function () { S.chk = x.getAttribute('data-c'); renderChk(); }; });
+  var cur = cards.filter(function (c) { return c.k === S.chk; })[0];
+  GT.create($('tChk'), { id: 'chk-' + cur.k, cols: cur.cols, rows: cur.rows,
+    onRow: (cur.job || cur.cols[0].k === 'job') ? function (r) { var code = r.code || r.job; if (S.snap.jobMap[code]) openDetail(code); } : null });
+}
+
+/* ---------------- แท็บหน้า ---------------- */
+function setTab() { document.querySelectorAll('#tabs .tab').forEach(function (t) { t.classList.toggle('on', t.getAttribute('data-p') === S.page); }); }
+document.querySelectorAll('#tabs .tab').forEach(function (t) {
+  t.onclick = function () { S.page = t.getAttribute('data-p'); setTab(); renderBar(); renderPage(); };
+});
+$('btnRefresh').onclick = refreshNow;
+$('btnLogout').onclick = function () { doLogout(false); };
+var _rz = null;
+window.addEventListener('resize', function () { clearTimeout(_rz); _rz = setTimeout(function () { if (S.snap) renderPage(); }, 300); });
+initLogin();
+</script>

@@ -1,0 +1,170 @@
+<script>
+/* =====================================================================
+ * หน้ารายละเอียดจ๊อบ — จัดซื้อ (สดจาก NOVA) · ค่าแรง HR · ผู้รับเหมา · วันทำงาน (สดจาก JOBTRACK)
+ * ===================================================================== */
+var DT = { code: '', tab: 'buy', buy: null, days: null };
+
+function openDetail(code, tab) {
+  var j = S.snap.jobMap[code]; if (!j) { toast('ไม่พบจ๊อบ ' + code); return; }
+  DT = { code: code, tab: tab || 'buy', buy: null, days: null };
+  var el = $('detail'); el.classList.remove('hide');
+  el.onclick = function (e) { if (e.target === el) closeDetail(); };
+  drawDetail();
+}
+function closeDetail() { $('detail').classList.add('hide'); $('detail').innerHTML = ''; GT.closePop(); }
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('detail').classList.contains('hide') && !document.querySelector('.fpop')) closeDetail(); });
+
+function drawDetail() {
+  var j = S.snap.jobMap[DT.code];
+  var est = S.est ? j.laborEst : 0, full = cost(j, 'v4'), prof = j.sale ? j.sale - full : null;
+  var segs = [
+    { t: 'สินค้า', v: j.goods, c: 'var(--c-goods)' }, { t: 'ผรม NOVA', v: j.p.c11, c: 'var(--c-cn)' },
+    { t: 'ค่าแรง STT', v: j.labor, c: 'var(--c-labor)' }, { t: 'ประมาณการ', v: est, c: 'var(--c-est)' }, { t: 'ผรม HR', v: j.cHR, c: 'var(--c-ch)' }
+  ];
+  var base = Math.max(j.sale, full) || 1;
+  var h = ['<div class="dpanel"><div class="dhead"><div style="flex:1"><div class="code">' + esc(j.code) + ' <span class="pill p-mute" style="font-size:12px;vertical-align:middle">' + esc(j.type) + '</span> ' + statusPill(j) + '</div>' +
+    '<div class="nm">' + esc(j.name || '-') + '</div><div class="meta">' +
+    (j.start ? '<span class="pill p-mute">เริ่ม ' + j.start + '</span>' : '') + (j.delivery ? '<span class="pill p-mute">ส่งมอบ ' + j.delivery + '</span>' : '') +
+    (j.dDays ? '<span class="pill p-info">ทำงาน ' + j.dDays + ' วัน · ' + j.dPeople + ' คน · ' + nf(j.dHours, 1) + ' ชม.</span>' : '') +
+    j.flags.map(function (f) { return '<span class="pill p-warn">' + esc(f) + '</span>'; }).join('') +
+    '</div></div><button class="xbtn" id="dX">✕</button></div><div class="dbody">'];
+  h.push('<div class="dk">',
+    kpiHtml('sale', 'ราคาขาย', nf(j.sale), j.saleSrc || 'ไม่พบราคาขาย'),
+    kpiHtml('cost', 'สินค้า (หมวด 1–10)', nf(j.goods), j.pShared ? 'หารจากแท็บรวม ' + j.pShared + ' คัน' : 'NOVA'),
+    kpiHtml('', 'ผรม NOVA (หมวด 11)', nf(j.p.c11), 'ยึดเป็นยอดหลัก'),
+    kpiHtml('pro', 'ค่าแรง STT (จริง)', nf(j.labor), 'ยกมา ' + nf(j.laborCF)),
+    kpiHtml('est', 'ค่าแรงประมาณการ', nf(j.laborEst), S.est ? 'รวมในต้นทุน' : 'ไม่ได้รวม'),
+    kpiHtml('', 'ผรม HR (ไม่ซ้ำ)', nf(j.cHR), j.cHRdup ? 'ตัดซ้ำ ' + nf(j.cHRdup) : 'ไม่มีรายการซ้ำ'),
+    kpiHtml(prof === null ? '' : prof >= 0 ? 'pro' : 'loss', 'ต้นทุนเต็ม · กำไร', nf(full), prof === null ? 'ไม่มีราคาขาย' : 'กำไร ' + nf(prof) + ' (' + pf(pct(prof, j.sale)) + ')'),
+    '</div>');
+  h.push('<div class="waterfall"><b>ต้นทุนเทียบราคาขาย</b><div class="wbar">');
+  segs.forEach(function (s) { if (s.v > 0) h.push('<span style="width:' + (s.v / base * 100) + '%;background:' + s.c + '" title="' + s.t + ' ' + nf(s.v) + '">' + (s.v / base > .07 ? s.t + ' ' + pf(s.v / (j.sale || full) * 100, 0) : '') + '</span>'); });
+  if (prof > 0) h.push('<span style="width:' + (prof / base * 100) + '%;background:repeating-linear-gradient(45deg,#D1FAE5,#D1FAE5 6px,#A7F3D0 6px,#A7F3D0 12px);color:#065F46">กำไร ' + pf(pct(prof, j.sale), 0) + '</span>');
+  h.push('</div>' + legendHtml(segs.map(function (s) { return { t: s.t, c: s.c }; })) + '</div>');
+  h.push('<div class="dtabs">' + [['buy', '🛒 จัดซื้อ (NOVA)'], ['hr', '👷 ค่าแรง HR'], ['con', '🤝 ผู้รับเหมา'], ['days', '📅 วันทำงาน']].map(function (t) {
+    return '<div class="dtab' + (DT.tab === t[0] ? ' on' : '') + '" data-t="' + t[0] + '">' + t[1] + '</div>';
+  }).join('') + '</div><div class="dsec" id="dSec"></div></div></div>');
+  $('detail').innerHTML = h.join('');
+  $('dX').onclick = closeDetail;
+  document.querySelectorAll('#detail .dtab').forEach(function (t) { t.onclick = function () { DT.tab = t.getAttribute('data-t'); drawDetail(); }; });
+  ({ buy: secBuy, hr: secHR, con: secCon, days: secDays })[DT.tab](j);
+}
+
+/* ---- จัดซื้อ ---- */
+function secBuy(j) {
+  var el = $('dSec');
+  var cats = S.snap.cats.map(function (c) { return { cat: c.label, v: j.p[c.k] || 0 }; }).filter(function (x) { return x.v; });
+  var idx = S.snap.novaIndex[j.code] || [];
+  var links = idx.map(function (x) {
+    return '<a class="lnk" target="_blank" href="https://docs.google.com/spreadsheets/d/' + x.fileId + '/edit#gid=' + x.sheetId + '">📄 แท็บ ' + esc(x.title) + '</a>';
+  }).join(' · ');
+  var h = ['<div class="note blue">ต้นทุน = คอลัมน์ "ต้นทุนเข้าจ๊อบ" ใน NOVA (สูตรเดียวกับหน้าต้นทุนของ NOVA) · ' +
+    (j.pShared ? '<b>แท็บนี้รวม ' + j.pShared + ' คัน → ระบบหารเท่ากันต่อคัน</b> · ' : '') +
+    (links ? 'เปิดดูต้นฉบับ: ' + links : 'ไม่พบแท็บจ๊อบนี้ใน NOVA') + ' <span id="novaBtn"></span></div>'];
+  h.push('<div class="tbox" id="tCat" style="flex:none;max-height:none"></div><div id="buyLines"><div class="note">⏳ กำลังโหลดรายการจัดซื้อรายบรรทัดจาก NOVA…</div></div>');
+  el.innerHTML = h.join('');
+  GT.create($('tCat'), { id: 'dcat', cols: [{ k: 'cat', t: 'หมวด' }, { k: 'v', t: 'ต้นทุนเข้าจ๊อบ (ต่อคัน)', type: 'num', dec: 2, grp: 'goods', foot: 'sum' },
+    { k: 'p', t: '% ของจัดซื้อ', type: 'num', dec: 1, get: function (r) { return pct(r.v, j.pTotal); }, fmt: function (v) { return pf(v); } }], rows: cats });
+  if (!idx.length) { $('buyLines').innerHTML = ''; return; }
+  var draw = function (res) {
+    if (res.novaUrl) $('novaBtn').innerHTML = '· <a class="lnk" target="_blank" href="' + esc(res.novaUrl) + (res.novaUrl.indexOf('?') >= 0 ? '&' : '?') + 'job=' + encodeURIComponent(j.code) + '">🔗 เปิดจ๊อบนี้ใน NOVA</a>';
+    var rows = [];
+    res.tabs.forEach(function (t) { (t.rows || []).forEach(function (r) { var o = { _tab: t.title + (t.units > 1 ? ' (÷' + t.units + ')' : '') }; t.cols.forEach(function (c, i) { o[c] = r[i]; }); rows.push(o); }); });
+    var cols = [{ k: '_tab', t: 'แท็บ NOVA' }];
+    (res.tabs[0] && res.tabs[0].cols || []).forEach(function (c) {
+      var num = /Q'TY|จำนวน|Price|ต้นทุน/.test(c);
+      cols.push({ k: c, t: c, type: num ? 'num' : undefined, dec: num ? 2 : undefined, wrap: /NAME|DESCRIPTION/.test(c), foot: c === 'ต้นทุนเข้าจ๊อบ' ? 'sum' : null,
+                  grp: c === 'ต้นทุนเข้าจ๊อบ' ? 'tot' : null });
+    });
+    $('buyLines').innerHTML = '<div class="cnt" style="margin:4px 0">รายการจัดซื้อรายบรรทัด (สด จาก NOVA) · ยอด "ต้นทุนเข้าจ๊อบ" ด้านล่างเป็นยอดทั้งแท็บ ยังไม่หารคัน</div><div class="tbox" id="tBuy"></div>';
+    GT.create($('tBuy'), { id: 'dbuy', cols: cols, rows: rows, frozen: 1 });
+  };
+  if (DT.buy) draw(DT.buy);
+  else call('getJobPurchase', S.token, j.code).then(function (res) { DT.buy = res; if (DT.code === j.code && DT.tab === 'buy') draw(res); })
+    .catch(function (e) { $('buyLines').innerHTML = '<div class="note">โหลดไม่สำเร็จ: ' + esc((e && e.message) || e) + '</div>'; });
+}
+
+/* ---- ค่าแรง HR ---- */
+function secHR(j) {
+  var el = $('dSec'), ms = S.snap.months, closed = S.snap.closed;
+  var procs = S.snap.procByJob[j.code] || [];
+  var jtH = {}; procs.forEach(function (p) { jtH[p[1]] = (jtH[p[1]] || 0) + p[4]; });
+  var mrows = ms.map(function (m) {
+    var isC = !!closed[m];
+    return { m: m, st: isC ? 'HR ปิดงวดแล้ว' : 'ยังไม่ปิดงวด', a: isC ? (j.laborM[m] || 0) : 0, e: isC ? 0 : (j.laborEstM[m] || 0),
+             part: isC ? 0 : (j.laborM[m] || 0), hh: (j.srcM[m] || [])[0] || 0, pp: (j.srcM[m] || [])[1] || 0, jh: jtH[m] || 0 };
+  }).filter(function (r) { return r.a || r.e || r.hh || r.jh || r.part; });
+  var h = ['<div class="mini">',
+    kpiHtml('pro', 'ค่าแรงจริง (ปิดงวด)', nf(j.labor), 'รวมยอดยกมา ' + nf(j.laborCF)),
+    kpiHtml('est', 'ประมาณการ', nf(j.laborEst), 'อัตรา ' + nf(j.rate, 2) + ' บาท/ชม.'),
+    kpiHtml('', 'งบค่าแรง', nf(j.laborBudget), j.laborBudget ? 'ใช้ไป ' + pf(pct(laborAll(j) + j.cHR, j.laborBudget)) + ' (รวม ผรม HR)' : 'ไม่มีงบใน Sale Budget'),
+    kpiHtml('', 'วันทำงาน / คน', (j.dDays || 0) + ' วัน · ' + (j.dPeople || 0) + ' คน', j.dFirst ? j.dFirst + ' → ' + j.dLast : 'ไม่มีข้อมูลรายวัน'),
+    kpiHtml('', 'ชั่วโมงรวม', nf(j.srcHours, 1) + ' ชม. (HR)', 'ข้อมูลรายวัน ' + nf(j.dHours, 1) + ' ชม.'),
+    '</div>'];
+  h.push('<div class="tbox" id="tHm" style="flex:none;max-height:none"></div>');
+  h.push('<div class="bar"><b>ค่าแรงราย Process</b><span class="viewdef">บาท = ค่าแรงเดือนนั้น × สัดส่วนชั่วโมงของ Process (เดือนที่ยังไม่ปิดงวด = ชม. × อัตราเฉลี่ย สีส้ม)</span></div><div class="tbox" id="tHp"></div>');
+  el.innerHTML = h.join('');
+  GT.create($('tHm'), { id: 'dhm', rows: mrows, cols: [
+    { k: 'm', t: 'เดือน (งวด 26–25)' }, { k: 'st', t: 'สถานะงวด', fmt: function (v) { return '<span class="pill ' + (/ปิดงวดแล้ว/.test(v) ? 'p-ok' : 'p-est') + '">' + v + '</span>'; } },
+    { k: 'a', t: 'ค่าแรงจริง', type: 'num', dec: 2, grp: 'labor', foot: 'sum' }, { k: 'e', t: 'ประมาณการ', type: 'num', dec: 2, grp: 'est', foot: 'sum', cls: function (v) { return v ? 'estc' : ''; } },
+    { k: 'part', t: 'HR ลงไว้แล้วบางส่วน (ไม่นับ)', type: 'num', dec: 2 },
+    { k: 'hh', t: 'ชม. ทางการ HR', type: 'num', dec: 1, foot: 'sum' }, { k: 'pp', t: 'คน (HR)', type: 'num' },
+    { k: 'jh', t: 'ชม. รายวัน', type: 'num', dec: 1, foot: 'sum' },
+    { k: 'cv', t: '% ครอบคลุม', type: 'num', dec: 1, get: function (r) { return r.hh ? pct(r.jh, r.hh) : null; }, fmt: function (v) { return pf(v); },
+      cls: function (v) { return v === null ? 'dim' : v < 80 ? 'neg' : 'pos'; } }] });
+  var pr = procs.filter(function (p) { return S.est || !p[8]; }).map(function (p) {
+    return { m: p[1], cat: p[2], sub: p[3], h: p[4], ppl: p[5], d: p[6], c: p[7], est: p[8] ? 'ประมาณการ' : (closed[p[1]] ? 'จริง' : ''), src: p[9] === 'HR' ? 'Timesheet HR' : p[9] === 'JT' ? 'JOBTRACK' : '-' };
+  });
+  GT.create($('tHp'), { id: 'dhp', rows: pr, cols: [
+    { k: 'm', t: 'เดือน' }, { k: 'cat', t: 'หมวด Process' }, { k: 'sub', t: 'งานย่อย', wrap: true },
+    { k: 'h', t: 'ชม.', type: 'num', dec: 1, foot: 'sum' }, { k: 'ppl', t: 'คน', type: 'num' }, { k: 'd', t: 'วัน', type: 'num' },
+    { k: 'c', t: 'ค่าแรง (บาท)', type: 'num', dec: 2, grp: 'labor', foot: 'sum', cls: function (v, r) { return r.est === 'ประมาณการ' ? 'estc' : ''; } },
+    { k: 'est', t: 'ชนิด' }, { k: 'src', t: 'แหล่ง' }] });
+}
+
+/* ---- ผู้รับเหมา ---- */
+function secCon(j) {
+  var el = $('dSec'), rows = S.snap.contrByJob[j.code] || [];
+  el.innerHTML = '<div class="mini">' +
+    kpiHtml('', 'NOVA หมวด 11 (ยอดหลัก)', nf(j.p.c11), 'ต่อคัน') +
+    kpiHtml('', 'HR ยอดทางการ', nf(j.cHRofficial), 'คอลัมน์ ค่าแรงผู้รับเหมา ใน ACTUAL_WIDE') +
+    kpiHtml('loss', 'ซ้ำกับ NOVA (ตัดออก)', nf(j.cHRdup), 'ไม่นับซ้ำ') +
+    kpiHtml('pro', 'HR ที่นับเพิ่ม', nf(j.cHR), 'ยอดทางการ − ส่วนที่ซ้ำ') +
+    kpiHtml(Math.abs(j.cHRgap) > 1 ? 'loss' : '', 'HR ไม่มีรายละเอียดบรรทัด', nf(j.cHRgap), Math.abs(j.cHRgap) > 1 ? 'ให้ HR ตรวจแท็บ Cost ผรม' : 'ครบ') +
+    '</div><div class="tbox" id="tCon"></div>';
+  GT.create($('tCon'), { id: 'dcon', rows: rows, cols: [
+    { k: 'src', t: 'แหล่ง', fmt: function (v) { return '<span class="pill ' + (v === 'NOVA' ? 'p-info' : 'p-mute') + '">' + v + '</span>'; } },
+    { k: 'vendor', t: 'ผู้รับเหมา' }, { k: 'desc', t: 'รายละเอียด / แท็บ', wrap: true },
+    { k: 'amount', t: 'ยอด', type: 'num', dec: 2, foot: 'sum' },
+    { k: 'dup', t: 'สถานะ', fkey: function (r) { return r.src === 'NOVA' ? 'นับ (ยอดหลัก)' : r.dup ? 'ซ้ำ — ไม่นับ' : r.suspect ? 'สงสัยซ้ำ — นับอยู่' : 'นับ'; },
+      fmt: function (v, r) { return r.src === 'NOVA' ? '<span class="pill p-ok">นับ (ยอดหลัก)</span>' : r.dup ? '<span class="pill p-bad">ซ้ำ — ไม่นับ</span>' : r.suspect ? '<span class="pill p-warn">สงสัยซ้ำ — นับอยู่</span>' : '<span class="pill p-ok">นับ</span>'; } },
+    { k: 'match', t: 'เหตุผล', wrap: true }] });
+}
+
+/* ---- วันทำงาน (สด) ---- */
+function secDays(j) {
+  var el = $('dSec');
+  el.innerHTML = '<div class="note">⏳ กำลังโหลดวันทำงานรายวันจาก JOBTRACK / Timesheet HR…</div>';
+  var draw = function (res) {
+    var rows = res.rows.map(function (r) { return { date: r[0], per: r[1], emp: r[2], name: r[3], dept: r[4], cat: r[5], sub: r[6], h: r[7], src: r[8] }; });
+    var byD = {};
+    rows.forEach(function (r) {
+      var d = byD[r.date] = byD[r.date] || { date: r.date, per: r.per, ppl: {}, h: 0, procs: {} };
+      d.ppl[r.emp] = 1; d.h += r.h; d.procs[r.sub] = 1;
+    });
+    var drows = Object.keys(byD).sort().map(function (k) { var d = byD[k]; return { date: d.date, per: d.per, n: Object.keys(d.ppl).length, h: d.h, p: Object.keys(d.procs).join(' · ') }; });
+    el.innerHTML = '<div class="mini">' + kpiHtml('', 'จำนวนวันทำงาน', drows.length + ' วัน', drows.length ? drows[0].date + ' → ' + drows[drows.length - 1].date : '-') +
+      kpiHtml('', 'จำนวนคน', Object.keys(rows.reduce(function (a, r) { a[r.emp] = 1; return a; }, {})).length + ' คน', '') +
+      kpiHtml('', 'ชั่วโมงรวม', nf(rows.reduce(function (a, r) { return a + r.h; }, 0), 1), 'จากข้อมูลรายวัน') +
+      kpiHtml('', 'จำนวน Process', Object.keys(rows.reduce(function (a, r) { a[r.sub] = 1; return a; }, {})).length, '') +
+      kpiHtml('', 'แหล่ง', rows.length ? Object.keys(rows.reduce(function (a, r) { a[r.src] = 1; return a; }, {})).join(' + ') : '-', '') + '</div>' +
+      '<div class="bar"><b>สรุปรายวัน</b></div><div class="tbox" id="tDd" style="max-height:30vh"></div><div class="bar"><b>รายคน รายวัน</b></div><div class="tbox" id="tDr"></div>';
+    GT.create($('tDd'), { id: 'ddd', rows: drows, cols: [{ k: 'date', t: 'วันที่' }, { k: 'per', t: 'งวด' }, { k: 'n', t: 'คน', type: 'num' }, { k: 'h', t: 'ชม.', type: 'num', dec: 1, foot: 'sum' }, { k: 'p', t: 'Process ที่ทำ', wrap: true }] });
+    GT.create($('tDr'), { id: 'ddr', rows: rows, cols: [{ k: 'date', t: 'วันที่' }, { k: 'emp', t: 'รหัส' }, { k: 'name', t: 'ชื่อ' }, { k: 'dept', t: 'แผนก' },
+      { k: 'cat', t: 'หมวด Process' }, { k: 'sub', t: 'งานย่อย', wrap: true }, { k: 'h', t: 'ชม.', type: 'num', dec: 2, foot: 'sum' }, { k: 'src', t: 'แหล่ง' }] });
+  };
+  if (DT.days) draw(DT.days);
+  else call('getJobDays', S.token, j.code).then(function (res) { DT.days = res; if (DT.code === j.code && DT.tab === 'days') draw(res); })
+    .catch(function (e) { el.innerHTML = '<div class="note">โหลดไม่สำเร็จ: ' + esc((e && e.message) || e) + '</div>'; });
+}
+</script>

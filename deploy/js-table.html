@@ -1,0 +1,193 @@
+<script>
+/**
+ * GT — ตารางที่ "ทุกคอลัมน์กรองได้" แบบ Google Sheets
+ *  - กดปุ่ม ▾ บนหัวคอลัมน์ → เรียง ก→ฮ / ฮ→ก · ค้นหา · ติ๊กเลือกค่า · (ตัวเลข) ช่วงต่ำสุด–สูงสุด
+ *  - หัวตารางติดบน · คอลัมน์ซ้ายติดค้าง · แถวรวมด้านล่างคิดจาก "แถวที่กรองแล้ว" เท่านั้น
+ *  - ตัวกรองจำไว้ต่อตาราง (เปลี่ยนหน้าไปมาไม่หาย)
+ */
+var GT = (function () {
+  var STATE = {};               // tableId -> {f:{colKey:{set:{},min,max}}, sort:{k,dir}}
+  var POP = null;
+
+  function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function val(c, r) { return c.get ? c.get(r) : r[c.k]; }
+  function key(c, r) {                         // ค่าที่ใช้กรองแบบติ๊ก (ข้อความ)
+    var v = val(c, r);
+    if (c.type === 'num') return (v === null || v === undefined || v === '') ? '(ว่าง)' : String(Math.round(Number(v) * 100) / 100);
+    v = (c.fkey ? c.fkey(r) : v);
+    return (v === null || v === undefined || v === '') ? '(ว่าง)' : String(v);
+  }
+  function st(id) { return STATE[id] = STATE[id] || { f: {}, sort: null }; }
+
+  function pass(T, r, skipKey) {
+    var s = st(T.id);
+    for (var k in s.f) {
+      if (k === skipKey) continue;
+      var f = s.f[k], c = T.colMap[k]; if (!c) continue;
+      if (f.set && !f.set[key(c, r)]) return false;
+      if (f.min !== undefined && f.min !== '' && !(Number(val(c, r) || 0) >= Number(f.min))) return false;
+      if (f.max !== undefined && f.max !== '' && !(Number(val(c, r) || 0) <= Number(f.max))) return false;
+      if (f.q && String(c.type === 'num' ? val(c, r) : key(c, r)).toLowerCase().indexOf(f.q.toLowerCase()) < 0) return false;
+    }
+    return true;
+  }
+
+  function filtered(T) {
+    var out = T.rows.filter(function (r) { return pass(T, r); });
+    var s = st(T.id).sort;
+    if (s) {
+      var c = T.colMap[s.k], d = s.dir;
+      out.sort(function (a, b) {
+        var x = val(c, a), y = val(c, b);
+        if (c.type === 'num') { x = Number(x) || 0; y = Number(y) || 0; return (x - y) * d; }
+        x = String(x === null || x === undefined ? '' : x); y = String(y === null || y === undefined ? '' : y);
+        return x.localeCompare(y, 'th') * d;
+      });
+    }
+    return out;
+  }
+
+  function create(el, opt) {
+    var T = { id: opt.id, el: el, cols: opt.cols, rows: opt.rows || [], onRow: opt.onRow, colMap: {}, frozen: opt.frozen || 0,
+              rowCls: opt.rowCls, limit: opt.limit || 4000, onChange: opt.onChange };
+    T.cols.forEach(function (c) { T.colMap[c.k] = c; });
+    T.render = function () { render(T); };
+    T.setRows = function (rows) { T.rows = rows; render(T); };
+    T.filtered = function () { return filtered(T); };
+    T.clear = function () { STATE[T.id] = { f: {}, sort: null }; render(T); };
+    render(T);
+    return T;
+  }
+
+  function fmtCell(c, r) {
+    var v = val(c, r);
+    if (c.fmt) return c.fmt(v, r);
+    if (c.type === 'num') return (v === null || v === undefined || v === '' || Number(v) === 0) ? '<span class="dim">–</span>' : nf(v, c.dec);
+    return esc(v);
+  }
+
+  function render(T) {
+    var rows = filtered(T), s = st(T.id);
+    var nAct = Object.keys(s.f).length;
+    var h = ['<table class="gt"><thead><tr>'];
+    T.cols.forEach(function (c, i) {
+      var on = s.f[c.k] ? ' fon' : '';
+      var srt = s.sort && s.sort.k === c.k ? (s.sort.dir > 0 ? ' ▲' : ' ▼') : '';
+      h.push('<th class="' + (c.type === 'num' ? 'n ' : '') + (c.grp ? 'g-' + c.grp + ' ' : '') + (i < T.frozen ? 'fz' : '') + on + '" data-i="' + i + '"' +
+        (c.tip ? ' title="' + esc(c.tip) + '"' : '') + '><div class="hw"><span>' + c.t + srt + '</span><button class="fb" data-k="' + c.k + '">▾</button></div></th>');
+    });
+    h.push('</tr></thead><tbody>');
+    var lim = Math.min(rows.length, T.limit);
+    for (var r = 0; r < lim; r++) {
+      var row = rows[r];
+      h.push('<tr data-r="' + r + '"' + (T.onRow ? ' class="click ' + (T.rowCls ? T.rowCls(row) : '') + '"' : '') + '>');
+      T.cols.forEach(function (c, i) {
+        var cls = (c.type === 'num' ? 'n ' : '') + (c.wrap ? 'wrap ' : '') + (i < T.frozen ? 'fz ' : '') + (c.cls ? c.cls(val(c, row), row) || '' : '');
+        h.push('<td class="' + cls + '">' + fmtCell(c, row) + '</td>');
+      });
+      h.push('</tr>');
+    }
+    h.push('</tbody>');
+    if (T.cols.some(function (c) { return c.foot; })) {
+      h.push('<tfoot><tr>');
+      T.cols.forEach(function (c, i) {
+        var cls = (c.type === 'num' ? 'n ' : '') + (i < T.frozen ? 'fz' : '');
+        var t = '';
+        if (i === 0) t = 'รวม ' + rows.length.toLocaleString() + ' แถว';
+        else if (c.foot === 'sum') { var sm = 0; rows.forEach(function (x) { sm += Number(val(c, x)) || 0; }); t = nf(sm, c.dec); }
+        else if (typeof c.foot === 'function') t = c.foot(rows);
+        h.push('<td class="' + cls + '">' + t + '</td>');
+      });
+      h.push('</tr></tfoot>');
+    }
+    h.push('</table>');
+    if (rows.length > lim) h.push('<div class="note" style="margin:8px">แสดง ' + lim.toLocaleString() + ' แถวแรกจาก ' + rows.length.toLocaleString() + ' — ใช้ตัวกรองเพื่อดูส่วนที่เหลือ (ยอดรวมด้านล่างคิดครบทุกแถวแล้ว)</div>');
+    if (!rows.length) h.push('<div class="note" style="margin:10px">ไม่มีข้อมูลตามตัวกรองนี้' + (nAct ? ' — <a class="lnk" data-clear="1">ล้างตัวกรองทั้งหมด</a>' : '') + '</div>');
+    T.el.innerHTML = h.join('');
+    T.view = rows;
+    freeze(T);
+    T.el.querySelectorAll('.fb').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); openPop(T, b.getAttribute('data-k'), b); }; });
+    var clr = T.el.querySelector('[data-clear]'); if (clr) clr.onclick = function () { T.clear(); if (T.onChange) T.onChange(); };
+    if (T.onRow) T.el.querySelectorAll('tbody tr').forEach(function (tr) {
+      tr.onclick = function () { T.onRow(T.view[+tr.getAttribute('data-r')]); };
+    });
+  }
+
+  function freeze(T) {
+    if (!T.frozen) return;
+    var ths = T.el.querySelectorAll('thead th'); var left = 0, lefts = [];
+    for (var i = 0; i < T.frozen && i < ths.length; i++) { lefts.push(left); left += ths[i].getBoundingClientRect().width; }
+    T.el.querySelectorAll('tr').forEach(function (tr) {
+      for (var i = 0; i < T.frozen; i++) { var c = tr.children[i]; if (c) c.style.left = lefts[i] + 'px'; }
+    });
+  }
+
+  function closePop() { if (POP) { POP.remove(); POP = null; } }
+  document.addEventListener('click', function (e) { if (POP && !POP.contains(e.target)) closePop(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePop(); });
+
+  function openPop(T, k, btn) {
+    closePop();
+    var c = T.colMap[k], s = st(T.id), f = s.f[k] || {};
+    // ค่าที่เลือกได้ = จากแถวที่ผ่าน "ตัวกรองอื่น" (เหมือน Google Sheets)
+    var cnt = {};
+    T.rows.forEach(function (r) { if (!pass(T, r, k)) return; var kk = key(c, r); cnt[kk] = (cnt[kk] || 0) + 1; });
+    var keys = Object.keys(cnt).sort(function (a, b) {
+      if (c.type === 'num') return (Number(a) || 0) - (Number(b) || 0);
+      return a.localeCompare(b, 'th');
+    });
+    var p = document.createElement('div'); p.className = 'fpop';
+    p.innerHTML = '<div class="tt">' + c.t + '</div>' +
+      '<div class="row"><button class="btn btn-ghost" data-s="1">เรียง ก→ฮ / น้อย→มาก</button><button class="btn btn-ghost" data-s="-1">ฮ→ก / มาก→น้อย</button></div>' +
+      '<input class="fs" placeholder="ค้นหาในรายการ…">' +
+      '<div class="links"><a data-a="all">เลือกทั้งหมด (' + keys.length + ')</a><a data-a="none">ล้าง</a></div>' +
+      '<div class="lst"></div>' +
+      (c.type === 'num' ? '<div class="rng"><input type="number" class="mn" placeholder="ต่ำสุด" value="' + (f.min !== undefined ? f.min : '') + '"><input type="number" class="mx" placeholder="สูงสุด" value="' + (f.max !== undefined ? f.max : '') + '"></div>' : '') +
+      '<div class="row" style="margin:10px 0 0"><button class="btn btn-ghost" data-x="1">ล้างตัวกรองคอลัมน์นี้</button><button class="btn btn-red" data-ok="1">ตกลง</button></div>';
+    document.body.appendChild(p); POP = p;
+    var rc = btn.getBoundingClientRect();
+    p.style.top = Math.min(rc.bottom + 6, window.innerHeight - p.offsetHeight - 10) + 'px';
+    p.style.left = Math.max(8, Math.min(rc.right - 300, window.innerWidth - 310)) + 'px';
+    var sel = {}; keys.forEach(function (x) { sel[x] = f.set ? !!f.set[x] : true; });
+    var lst = p.querySelector('.lst'), fs = p.querySelector('.fs');
+    function draw() {
+      var q = fs.value.trim().toLowerCase(), h = [], n = 0;
+      for (var i = 0; i < keys.length; i++) {
+        var x = keys[i]; if (q && x.toLowerCase().indexOf(q) < 0) continue;
+        if (n++ > 800) { h.push('<div class="cnt" style="padding:6px">… พิมพ์ค้นหาเพื่อดูเพิ่ม</div>'); break; }
+        var lbl = c.type === 'num' && x !== '(ว่าง)' ? nf(x, c.dec) : x;
+        h.push('<label><input type="checkbox" data-v="' + esc(x) + '"' + (sel[x] ? ' checked' : '') + '><span title="' + esc(lbl) + '">' + esc(lbl) + '</span><em>' + cnt[x] + '</em></label>');
+      }
+      lst.innerHTML = h.join('');
+      lst.querySelectorAll('input').forEach(function (cb) { cb.onchange = function () { sel[cb.getAttribute('data-v')] = cb.checked; }; });
+    }
+    draw(); fs.oninput = draw; setTimeout(function () { fs.focus(); }, 30);
+    p.querySelector('[data-a=all]').onclick = function () { var q = fs.value.trim().toLowerCase(); keys.forEach(function (x) { if (!q || x.toLowerCase().indexOf(q) >= 0) sel[x] = true; }); draw(); };
+    p.querySelector('[data-a=none]').onclick = function () { var q = fs.value.trim().toLowerCase(); keys.forEach(function (x) { if (!q || x.toLowerCase().indexOf(q) >= 0) sel[x] = false; }); draw(); };
+    p.querySelectorAll('[data-s]').forEach(function (b) { b.onclick = function () { s.sort = { k: k, dir: +b.getAttribute('data-s') }; closePop(); render(T); }; });
+    p.querySelector('[data-x]').onclick = function () { delete s.f[k]; closePop(); render(T); if (T.onChange) T.onChange(); };
+    p.querySelector('[data-ok]').onclick = function () {
+      var all = keys.every(function (x) { return sel[x]; });
+      var nf2 = {};
+      // พิมพ์ค้นหาแล้วกดตกลง = เลือกเฉพาะที่ตรงคำค้น (เหมือน Sheets)
+      var q = fs.value.trim().toLowerCase();
+      if (q) { keys.forEach(function (x) { if (x.toLowerCase().indexOf(q) < 0) sel[x] = false; }); all = false; }
+      if (!all) { nf2.set = {}; keys.forEach(function (x) { if (sel[x]) nf2.set[x] = 1; }); }
+      if (c.type === 'num') { var mn = p.querySelector('.mn').value, mx = p.querySelector('.mx').value; if (mn !== '') nf2.min = mn; if (mx !== '') nf2.max = mx; }
+      if (Object.keys(nf2).length) s.f[k] = nf2; else delete s.f[k];
+      closePop(); render(T); if (T.onChange) T.onChange();
+    };
+    p.addEventListener('click', function (e) { e.stopPropagation(); });
+  }
+
+  return { create: create, esc: esc, state: STATE, closePop: closePop };
+})();
+
+/** ตัวเลขมีคอมมา · dec = ทศนิยม (ค่าเริ่ม 0 สำหรับเงินบาทรวม) */
+function nf(v, dec) {
+  var n = Number(v) || 0; dec = dec === undefined ? 0 : dec;
+  return n.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+function pct(a, b) { return b ? (a / b * 100) : null; }
+function pf(x, d) { return x === null || x === undefined || !isFinite(x) ? '–' : x.toFixed(d === undefined ? 1 : d) + '%'; }
+</script>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<title>STT NOVA-Costing</title>
+<?!= include('styles') ?>
+</head>
+<body>
+
+<!-- ===================== ล็อกอิน ===================== -->
+<div id="login">
+  <div class="login-card">
+    <img class="lh" id="lhImg" alt="Sutee Tankers and Special Truck">
+    <div class="login-body">
+      <h1>STT NOVA-<b>Costing</b></h1>
+      <p class="sub">ต้นทุนงานจริง = จัดซื้อ (NOVA) + ค่าแรง (HR) เทียบราคาขาย</p>
+      <label class="fld"><span>รหัสพนักงาน</span><input id="inEmp" inputmode="numeric" autocomplete="username"></label>
+      <label class="fld"><span>PIN</span><input id="inPin" type="password" inputmode="numeric" autocomplete="current-password"></label>
+      <button class="btn btn-red" id="btnLogin" style="width:100%;padding:12px">เข้าสู่ระบบ</button>
+      <div class="login-msg" id="loginMsg"></div>
+      <div class="lock-note">🔒 เฉพาะผู้ได้รับสิทธิ์ 3 ท่าน · ใช้ PIN ชุดเดียวกับ NOVA · <span class="ver" id="verLogin"><?= version ?></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== โปรแกรม ===================== -->
+<div id="app" class="hide">
+  <div class="top">
+    <img class="logo" id="logoImg" alt="STT">
+    <div class="brand"><div class="t">STT NOVA-<b>Costing</b></div><div class="s">ต้นทุนงานจริง · จัดซื้อ NOVA + ค่าแรง HR + ผู้รับเหมา เทียบราคาขาย</div></div>
+    <span class="ver" id="verBadge"><?= version ?></span>
+    <div class="sp"></div>
+    <div class="upd" id="updInfo"></div>
+    <button class="btn btn-ghost" id="btnRefresh" title="ดึงข้อมูลล่าสุดจากทุกไฟล์">⟳ อัปเดตตอนนี้</button>
+    <div class="me"><div class="av" id="meAv">?</div><span id="meName"></span></div>
+    <button class="btn btn-ghost" id="btnLogout">ออก</button>
+  </div>
+  <div class="tabs" id="tabs">
+    <div class="tab on" data-p="ov">📊 ภาพรวม</div>
+    <div class="tab" data-p="jobs">📋 ต้นทุนรายจ๊อบ</div>
+    <div class="tab" data-p="hr">👷 ค่าแรง HR รายเดือน</div>
+    <div class="tab" data-p="proc">🛠️ ค่าแรงราย Process</div>
+    <div class="tab" data-p="chk">✅ กระทบยอด <span class="n hide" id="chkN">0</span></div>
+  </div>
+  <div class="main">
+    <div class="bar" id="gbar"></div>
+    <div class="page" id="pg-ov"></div>
+    <div class="page hide" id="pg-jobs"></div>
+    <div class="page hide" id="pg-hr"></div>
+    <div class="page hide" id="pg-proc"></div>
+    <div class="page hide" id="pg-chk"></div>
+  </div>
+</div>
+
+<div id="detail" class="hide"></div>
+<div id="busy" class="hide"><div class="spin"></div><div id="busyTxt">กำลังโหลด…</div></div>
+
+<?!= include('assets') ?>
+<?!= include('js-table') ?>
+<?!= include('js-app') ?>
+<?!= include('js-detail') ?>
+</body>
+</html>
