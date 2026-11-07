@@ -23,7 +23,8 @@ Dashboard ต้นทุนงานจริง: จัดซื้อ (NOVA �
    งวดที่มี TIMESHEET_DIRECT ใช้ตัวนั้นทั้งงวด (ตรง SRC) · นอกนั้น JOBTRACK
 4. **เดือนยังไม่ปิดงวด** (แถว "HR ใส่ตัวเลข" ว่าง) = ประมาณการ ชม. × อัตรา (Σต้นทุน SRC ÷ Σชม. SRC ของจ๊อบ · ไม่มีใช้อัตราเดือนล่าสุดทั้งโรงงาน)
 5. **มุมมอง:** ① จัดซื้อ (1–11) ② HR (ค่าแรง+ผรม HR) ③ จัดซื้อ+ค่าแรง STT ④ สินค้า+ค่าแรง STT+ผรมทั้งหมด (ต้นทุนเต็ม)
-6. **สิทธิ์:** ALLOW ใน 00-config.js มี 3 รหัส (6100030 · 999999 · 888888) + PIN จาก USERS · ทุก endpoint เรียก `requireAuth_` บรรทัดแรก
+6. **แถวซ้ำ (7 พ.ย.):** ACTUAL_WIDE เลขจ๊อบซ้ำ + ตัวเลขเหมือนกันทุกช่อง (ยกมา · 12 เดือน · ผรม) → ตัดแถวหลัง · ตัวเลขไม่เหมือนกัน → ไม่ตัด
+7. **สิทธิ์:** ALLOW ใน 00-config.js มี 3 รหัส (6100030 · 999999 · 888888) + PIN จาก USERS · ทุก endpoint เรียก `requireAuth_` บรรทัดแรก
 
 ## 3. Deploy
 GitHub: `STT-WEB/STT-NOVA-Costing` (เบียร์สร้าง repo เอง → `เชื่อม GitHub.bat` ครั้งแรก) · .gitignore แบบ P&S: ไม่ขึ้นรหัส clasp / ข้อมูลจริง / preview
@@ -31,9 +32,12 @@ GitHub: `STT-WEB/STT-NOVA-Costing` (เบียร์สร้าง repo เ�
 ครั้งแรก: `สร้างโปรเจกต์ครั้งแรก.bat` (clasp create แล้วคืน appsscript.json ของเรา)
 
 ## 4. ทดสอบกับข้อมูลจริง (ในคลาวด์ของ Candy)
+⚠️ **บทเรียน v1.1.1:** xlsx ที่ export ตัด "/" ออกจากชื่อแท็บ (`JT-69/0001` → `JT-690001`) → make_fixture.py คืน "/" ให้แล้ว
+ต้องรัน `_tests/sim-gather.js` (จำลอง Sheets API + โค้ดเซิร์ฟเวอร์จริง) ทุกครั้งที่แก้ 02-io / 20-build / ตัวแปลงชื่อแท็บ
+หลังขึ้นระบบ: ดาวน์โหลด `STT-NOVA-Costing-SNAPSHOT.json` จาก Drive มาเช็ค diag.novaFiles (ทุกไฟล์ต้อง tabs > 0)
 1. ดาวน์โหลด xlsx ของ MASTER / HR / JOBLOG / STT-DB-JT-2569 / STT-DB-JM-2569 ด้วย Drive connector
 2. `python3 tools/make_fixture.py <dir> <dir>/fixture.json`
-3. `node _tests/guard-v100.js <dir>` · `node tools/build_preview.js <dir> preview/x.html`
+3. `node _tests/guard-v100.js <dir>` · `node _tests/sim-gather.js <dir>` (ต้องมี nova_full.json) · `node tools/build_preview.js <dir> preview/x.html`
 
 ## 5. ค้างอยู่ / ต้องขอจากเบียร์
 - หน้าภาพรวม v1.1.0 = แบบผู้บริหารจอเดียว (เบียร์เลือก 7 พ.ย.) — มุมมอง ② HR ยังเทียบกับราคาขาย อาจควรเทียบงบค่าแรง
@@ -41,4 +45,4 @@ GitHub: `STT-WEB/STT-NOVA-Costing` (เบียร์สร้าง repo เ�
 - ลิงก์เว็บ NOVA ใหญ่ + วิธีเปิดจ๊อบตรง (ใส่ Script Property `NOVA_URL`) — ตอนนี้ปุ่มเปิดแท็บ Google Sheet ของจ๊อบแทน
   โฟลเดอร์โค้ด NOVA ใหญ่ชื่อมีอักษรไทยซ้อน ขอสิทธิ์จากระบบไม่ได้ → ให้เบียร์ "Add folder" เอง
 - ราคาขาย JMS/JMC/JMT ไม่อยู่ใน Budget Cost Sales JM (384 จ๊อบไม่มีราคาขาย) — ถามว่าอยู่ไฟล์ไหน
-- HR แก้แถวซ้ำ JMS-69/0235 ใน ACTUAL_WIDE (มิ.ย. นับซ้ำ 1,631.05)
+- ✅ แถวซ้ำใน ACTUAL_WIDE: เบียร์สั่งให้ระบบตัดเอง (เลขจ๊อบซ้ำ + ตัวเลขเหมือนกันทุกช่อง) — v1.1.1

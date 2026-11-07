@@ -160,14 +160,16 @@ function eCat_(v) {
 /* ---------------- 1) NOVA: ชื่อแท็บ → รายการจ๊อบ ---------------- */
 
 /**
- * 'JT-690002-0003'               → { jobs:['JT-69/0002','JT-69/0003'] }
+ * ชื่อแท็บจริงใน NOVA มี "/" เช่น 'JT-69/0001' · 'JT-69/0002-0003'
+ * (ไฟล์ xlsx ที่ export ออกมาจะตัด "/" ทิ้งเป็น 'JT-690001' → รับได้ทั้งสองแบบ)
+ * 'JT-69/0002-0003'              → { jobs:['JT-69/0002','JT-69/0003'] }
  * 'JT-690006-0007 งานแก้ไขผิวแท็งค' → 2 จ๊อบ + note
  * 'JM-690194(ยกเลิก)'            → cancelled
  */
 function eNovaTabJobs_(title, jobNoCell) {
   var t = eStr_(title);
   var out = { title: t, jobs: [], cancelled: /ยกเลิก/.test(t), note: '' };
-  var m = t.match(/^([A-Z]{1,5})-(\d{2})(\d{4})(?:-(\d{4}))?(.*)$/);
+  var m = t.match(/^([A-Z]{1,5})-(\d{2})\/?(\d{4})(?:-(\d{4}))?(.*)$/);
   if (m) {
     var a = +m[3], b = m[4] ? +m[4] : a;
     if (b < a || b - a > 60) b = a;            // กันชื่อแท็บแปลก ๆ
@@ -184,7 +186,7 @@ function eNovaTabJobs_(title, jobNoCell) {
 
 /** แท็บไหนเป็นแท็บจ๊อบ (ไม่ใช่ Template / Copy of …) */
 function eIsNovaJobTab_(title) {
-  return /^[A-Z]{1,5}-\d{6}/.test(eStr_(title));
+  return /^[A-Z]{1,5}-\d{2}\/?\d{4}/.test(eStr_(title));
 }
 
 /**
@@ -334,7 +336,7 @@ function eBuildSnapshot_(input) {
 
   /* ---- 2.4 HR ACTUAL_WIDE ---- */
   var months = [], closed = {}, hrInputRow = null, hrTotalRow = null;
-  D.hrDupJobs = []; D.hrTotalColDiff = [];
+  D.hrDupJobs = []; D.hrTotalColDiff = []; D.hrDedup = [];
   (function () {
     var v = input.hrWide || [];
     var h = eFindHdrRow_(v, 'JOB CODE', 10);
@@ -363,7 +365,7 @@ function eBuildSnapshot_(input) {
       var x = hrInputRow ? eNum_(hrInputRow[mc.c]) : 0;
       if (x > 0) closed[mc.m] = x;
     });
-    var seen = {};
+    var seen = {}, sigs = {};
     for (var i = h + 1; i < v.length; i++) {
       var code = eJob_(v[i][iCode]); if (!eIsJob_(code)) continue;
       var cf = iCF >= 0 ? eNum_(v[i][iCF]) : 0, con = iCon >= 0 ? eNum_(v[i][iCon]) : 0,
@@ -374,6 +376,19 @@ function eBuildSnapshot_(input) {
       });
       // รหัสซ้ำหลายแถว และมีตัวเลขมากกว่า 1 แถว = เสี่ยง HR นับ 2 ครั้ง ต้องตรวจ
       var anyLab = cf !== 0 || Object.keys(ms).length > 0;
+      // เบียร์สั่ง 7 พ.ย. 2569: เลขจ๊อบซ้ำ + ตัวเลขเหมือนกันทุกช่อง = แถวซ้ำ → ตัดออก นับครั้งเดียว
+      if (any) {
+        var sig = [cf, con].concat(mCols.map(function (mc) { return eRound2_(ms[mc.m] || 0); })).join('|');
+        var sg = sigs[code] = sigs[code] || {};
+        if (sg[sig]) {
+          var tot = cf; for (var dm in ms) tot += ms[dm];
+          D.hrDedup.push({ job: code, row: i + 1, rowFirst: sg[sig], labor: eRound2_(tot), contr: eRound2_(con),
+                           months: Object.keys(ms).sort().join(', '), monthly: ms });
+          continue;
+        }
+        sg[sig] = i + 1;
+      }
+      // ซ้ำแต่ตัวเลขไม่เหมือนกัน และมีค่าแรงทั้ง 2 แถว = ต้องให้ HR ตรวจ (ยังนับรวมตามไฟล์)
       if (anyLab) { seen[code] = (seen[code] || 0) + 1; if (seen[code] === 2) D.hrDupJobs.push(code); }
       if (!any && !J[code]) {
         // ไม่มีค่าแรงเลย — เก็บข้อมูลจ๊อบไว้เผื่อมีจัดซื้อ/ผรม ภายหลัง
@@ -635,7 +650,8 @@ function eBuildSnapshot_(input) {
     var hrIn = closed[m] || 0;
     var est = 0; Object.keys(J).forEach(function (c) { est += J[c].laborEstM[m] || 0; });
     var src = srcMonth[m] || { hours: 0, cost: 0 };
-    return { m: m, closed: closed[m] ? 1 : 0, hrInput: eRound2_(hrIn), sumJobs: eRound2_(sum),
+    var ded = 0; (D.hrDedup || []).forEach(function (x) { ded += (x.monthly && x.monthly[m]) || 0; });
+    return { m: m, closed: closed[m] ? 1 : 0, hrInput: eRound2_(hrIn), sumJobs: eRound2_(sum), dedup: eRound2_(ded),
              diff: closed[m] ? eRound2_(sum - hrIn) : 0, est: eRound2_(est), srcCost: eRound2_(src.cost), srcHours: eRound2_(src.hours) };
   });
 

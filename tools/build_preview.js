@@ -5,7 +5,7 @@ const D = path.join(__dirname, '..', 'deploy');
 const E = require(path.join(D, '10-engine.js'));
 const DATA = process.argv[2], OUT = process.argv[3];
 const inp = JSON.parse(fs.readFileSync(path.join(DATA, 'fixture.json'), 'utf8'));
-const snap = E.eBuildSnapshot_(inp); snap.version = 'v1.0.0'; snap.builtAt = new Date().toISOString();
+const snap = E.eBuildSnapshot_(inp); snap.version = (fs.readFileSync(path.join(D, '00-config.js'), 'utf8').match(/COSTING_VERSION = '([^']+)'/) || [])[1]; snap.builtAt = new Date().toISOString();
 snap.timing = {};
 const buy = JSON.parse(fs.readFileSync(path.join(DATA, 'mock_buy.json'), 'utf8'));
 const cfg = fs.readFileSync(path.join(D, '00-config.js'), 'utf8');

@@ -61,6 +61,8 @@ for ftype, fname, path in [("JT", "STT-DB-JT-2569", "jt2569.xlsx"), ("JM", "STT-
         t = ws.title
         if not re.match(r"^[A-Z]{1,5}-\d{6}", t):
             continue
+        # ชื่อแท็บจริงใน Google Sheets มี "/" (xlsx ตัดทิ้ง) → คืนรูปจริงให้เหมือนที่ระบบเจอบนเว็บ
+        t = re.sub(r"^([A-Z]{1,5})-(\d{2})(\d{4})", r"\1-\2/\3", t)
         rows = vals(ws)
         head = rows[1:12]
         hdr_i = next((k for k in range(1, 15) if len(rows) > k and rows[k] and str(rows[k][0]).strip() == "หมวด"), -1)

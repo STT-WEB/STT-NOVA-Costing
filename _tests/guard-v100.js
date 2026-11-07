@@ -40,6 +40,18 @@ const man = JSON.parse(read('appsscript.json'));
 ok(man.dependencies.enabledAdvancedServices.some(s => s.serviceId === 'sheets'), 'manifest ต้องเปิด Sheets API');
 ok(man.webapp && man.webapp.executeAs === 'USER_DEPLOYING', 'web app ต้อง execute as เจ้าของ');
 
+/* ---------- 1.5) ชื่อแท็บ NOVA จริง (บทเรียน v1.1.1: บนเว็บมี "/" แต่ xlsx ตัดทิ้ง) ---------- */
+{
+  const E0 = require(path.join(D, '10-engine.js'));
+  [['JT-69/0001', ['JT-69/0001']], ['JT-69/0002-0003', ['JT-69/0002', 'JT-69/0003']], ['JT-690002-0003', ['JT-69/0002', 'JT-69/0003']],
+   ['JT-69/0006-0007 งานแก้ไขผิวแท็งค์', ['JT-69/0006', 'JT-69/0007']], ['JMI-69/0025', ['JMI-69/0025']], ['FG-68/0015', ['FG-68/0015']]].forEach(x => {
+    ok(E0.eIsNovaJobTab_(x[0]), 'ต้องรู้ว่าเป็นแท็บจ๊อบ: ' + x[0]);
+    ok(JSON.stringify(E0.eNovaTabJobs_(x[0]).jobs) === JSON.stringify(x[1]), 'แปลงชื่อแท็บผิด: ' + x[0]);
+  });
+  ok(!E0.eIsNovaJobTab_('Template') && !E0.eIsNovaJobTab_('Copy of JT-69/0001'), 'Template / Copy of ไม่ใช่แท็บจ๊อบ');
+  ok(E0.eNovaTabJobs_('JM-69/0194(ยกเลิก)').cancelled, 'แท็บยกเลิกต้องถูกข้าม');
+}
+
 /* ---------- 2) ตัวเลขจากข้อมูลจริง ---------- */
 const DATA = process.argv[2];
 if (DATA && fs.existsSync(path.join(DATA, 'fixture.json'))) {
@@ -54,8 +66,11 @@ if (DATA && fs.existsSync(path.join(DATA, 'fixture.json'))) {
   s.months.forEach(m => {
     const c = w[hi].indexOf(m); if (c < 0 || !s.closed[m]) return;
     let sum = 0; s.jobs.forEach(j => sum += j.laborM[m] || 0);
-    ok(near(sum, Number(totRow[c]) || 0, 0.05), 'ค่าแรงเดือน ' + m + ' รวมทุกจ๊อบ ' + sum.toFixed(2) + ' ≠ แถว TOTal ' + totRow[c]);
+    let ded = 0; s.diag.hrDedup.forEach(x => ded += x.monthly[m] || 0);
+    ok(near(sum + ded, Number(totRow[c]) || 0, 0.05), 'ค่าแรงเดือน ' + m + ' รวมทุกจ๊อบ + แถวซ้ำที่ตัด ' + (sum + ded).toFixed(2) + ' ≠ แถว TOTal ' + totRow[c]);
   });
+  ok(inp.nova.every(f => f.tabs.every(t => t.title.indexOf('/') > 0)), 'fixture ต้องใช้ชื่อแท็บแบบจริง (มี /)');
+  ok(s.diag.novaFiles.every(f => f.tabs > 0), 'ทุกไฟล์ NOVA ต้องอ่านได้อย่างน้อย 1 แท็บ');
   // 2.2 ต้นทุน NOVA ทุกบาทต้องลงจ๊อบครบ (หารคันแล้วรวมกลับต้องเท่าเดิม)
   let raw = 0; inp.nova.forEach(f => f.tabs.forEach(t => { if (/ยกเลิก/.test(t.title)) return; t.rows.forEach(r => raw += Number(r[2]) || 0); }));
   let alloc = 0; s.jobs.forEach(j => alloc += j.pTotal);
@@ -84,8 +99,14 @@ if (DATA && fs.existsSync(path.join(DATA, 'fixture.json'))) {
   // 2.6 ไม่มีจ๊อบไหนนับค่าแรงเดือนที่ยังไม่ปิดงวดเข้า "จริง"
   let b3 = 0; s.jobs.forEach(j => { let a = j.laborCF; for (const m in j.laborM) if (s.closed[m]) a += j.laborM[m]; if (!near(a, j.labor, 0.05)) b3++; });
   ok(b3 === 0, 'labor ต้อง = ยกมา + เดือนที่ปิดงวด');
-  // 2.7 ส่วนต่าง มิ.ย. ต้องชี้ได้ว่าเป็น JMS-69/0235 (แถวซ้ำใน ACTUAL_WIDE)
-  ok(s.diag.srcVsWide.some(x => x.job === 'JMS-69/0235' && x.m === '2026-06' && near(x.diff, 1631.05)), 'ต้องหาเจอว่า มิ.ย. ต่าง 1,631.05 จาก JMS-69/0235');
+  // 2.7 แถวซ้ำที่ตัวเลขเหมือนกัน ต้องถูกตัด (เบียร์สั่ง 7 พ.ย.): JMS-69/0235 · JMI-68/0047
+  ok(['JMS-69/0235', 'JMI-68/0047'].every(c => s.diag.hrDedup.some(x => x.job === c)), 'ต้องตัดแถวซ้ำ JMS-69/0235 และ JMI-68/0047');
+  ok(near(J['JMS-69/0235'].laborM['2026-06'], 1631.05), 'JMS-69/0235 มิ.ย. ต้องนับครั้งเดียว 1,631.05');
+  const jun = s.monthCheck.find(x => x.m === '2026-06');
+  ok(near(jun.diff, 0, 0.05), 'มิ.ย. หลังตัดแถวซ้ำ ต้องตรงกับ HR ใส่ตัวเลข (ต่าง ' + jun.diff + ')');
+  ok(!s.diag.srcVsWide.some(x => x.job === 'JMS-69/0235'), 'JMS-69/0235 ต้องไม่ต่างจาก SRC แล้ว');
+  // แถวซ้ำที่ตัวเลขไม่เหมือนกัน (เช่น แถวหนึ่งมีแค่ ผรม อีกแถวมีค่าแรง) ต้องไม่ถูกตัด
+  ok(near(J['JM-69/0547'].labor, 5182.05) && near(J['JM-69/0547'].cHRofficial, 5500), 'JM-69/0547 ต้องนับค่าแรงครบและ ผรม ครั้งเดียว');
   console.log('ข้อมูลจริง: ' + s.jobs.length + ' จ๊อบ · NOVA ' + raw.toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' บาท');
 } else {
   console.log('(ข้ามการตรวจตัวเลข — ไม่มี fixture.json)');

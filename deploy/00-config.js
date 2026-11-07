@@ -9,7 +9,7 @@
  *  - ป้ายเวอร์ชันบนเว็บดึงจาก COSTING_VERSION ตัวนี้ตัวเดียว (หลักฐานว่า deploy ขึ้นจริง)
  */
 
-var COSTING_VERSION = 'v1.1.0';
+var COSTING_VERSION = 'v1.1.1';
 var COSTING_BUILD   = '2026-11-07';
 
 var CFG = {

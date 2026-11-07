@@ -15,6 +15,8 @@ for i,ws in enumerate(wb.worksheets):
             if isinstance(v,datetime.datetime): v=v.strftime('%Y-%m-%d')
             o.append('' if v is None else v)
         data.append(o)
-    out[ws.title]={'title':ws.title,'cols':keep,'rows':data,'fileId':'FID_JT','sheetId':i}
+    import re as _re
+    title=_re.sub(r"^([A-Z]{1,5})-(\d{2})(\d{4})", r"\1-\2/\3", ws.title)
+    out[title]={'title':title,'cols':keep,'rows':data,'fileId':'FID_JT','sheetId':i}
 json.dump(out,open(sys.argv[2],'w'),ensure_ascii=False,default=str)
 print(len(out))

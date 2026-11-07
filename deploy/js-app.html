@@ -560,10 +560,15 @@ function chkCards() {
   var dup = s.contr.filter(function (c) { return c.dup; }), sus = s.contr.filter(function (c) { return c.suspect; });
   var dupAmt = 0; dup.forEach(function (c) { dupAmt += c.amount; });
   var skipped = (d.novaCancelled || []).map(function (x) { return { file: x.file, tab: x.tab, why: 'แท็บยกเลิก (ไม่นับ)' }; }).concat(d.novaSkipped || []);
+  var novaZero = (d.novaFiles || []).filter(function (f) { return !f.tabs; });
   return [
+    { k: 'nova0', lv: novaZero.length ? 'bad' : 'ok', t: 'อ่านไฟล์ NOVA', v: novaZero.length ? novaZero.length + ' ไฟล์อ่านไม่ได้' : 'อ่านครบ ' + (d.novaFiles || []).length + ' ไฟล์',
+      d: novaZero.length ? 'ไฟล์ใน REGISTRY ที่ไม่พบแท็บจ๊อบเลย — ต้นทุนจัดซื้อจะขาด' : 'ทุกไฟล์ใน REGISTRY มีแท็บจ๊อบ',
+      cols: [{ k: 'type', t: 'ชนิด' }, { k: 'file', t: 'ไฟล์' }, { k: 'tabs', t: 'แท็บจ๊อบ', type: 'num' }, { k: 'cost', t: 'ต้นทุนรวม', type: 'num', dec: 2, foot: 'sum' }], rows: d.novaFiles || [] },
     { k: 'mon', lv: mBad.length ? 'bad' : 'ok', t: 'ค่าแรง HR รายเดือน', v: mBad.length ? mBad.length + ' เดือนไม่ตรง' : 'ตรงทุกเดือน', d: 'แถว "HR ใส่ตัวเลข" vs ผลรวมทุกจ๊อบใน ACTUAL_WIDE',
       cols: [{ k: 'm', t: 'เดือน' }, { k: 'st', t: 'งวด', get: function (r) { return r.closed ? 'ปิดแล้ว' : 'ยังไม่ปิด'; } }, { k: 'hrInput', t: 'HR ใส่ตัวเลข', type: 'num', dec: 2 },
-             { k: 'sumJobs', t: 'ผลรวมทุกจ๊อบ', type: 'num', dec: 2 }, { k: 'diff', t: 'ส่วนต่าง', type: 'num', dec: 2, cls: function (v) { return Math.abs(v) > 1 ? 'neg' : ''; } },
+             { k: 'sumJobs', t: 'ผลรวมทุกจ๊อบ (ตัดแถวซ้ำแล้ว)', type: 'num', dec: 2 }, { k: 'diff', t: 'ส่วนต่าง', type: 'num', dec: 2, cls: function (v) { return Math.abs(v) > 1 ? 'neg' : ''; } },
+             { k: 'dedup', t: 'แถวซ้ำที่ตัดออก', type: 'num', dec: 2 },
              { k: 'srcCost', t: 'ผลรวม SRC', type: 'num', dec: 2 }, { k: 'srcHours', t: 'ชม. SRC', type: 'num', dec: 1 }, { k: 'est', t: 'ประมาณการ', type: 'num', dec: 2 }], rows: s.monthCheck },
     { k: 'svw', lv: (d.srcVsWide || []).length ? 'bad' : 'ok', t: 'ค่าแรงรายจ๊อบ: ACTUAL_WIDE ≠ SRC', v: (d.srcVsWide || []).length + ' จ๊อบ-เดือน', d: 'ชี้ว่าส่วนต่างรายเดือนมาจากจ๊อบไหน',
       cols: [{ k: 'm', t: 'เดือน' }, { k: 'job', t: 'JOB' }, { k: 'wide', t: 'ACTUAL_WIDE', type: 'num', dec: 2, foot: 'sum' }, { k: 'src', t: 'SRC', type: 'num', dec: 2, foot: 'sum' },
@@ -580,7 +585,10 @@ function chkCards() {
       cols: [{ k: 'file', t: 'ไฟล์' }, { k: 'tab', t: 'แท็บ' }, { k: 'amount', t: 'ยอด', type: 'num', dec: 2, foot: 'sum' }], rows: d.novaNoCat || [] },
     { k: 'nosale', lv: noSale.length ? 'warn' : 'ok', t: 'จ๊อบมีต้นทุน แต่ไม่พบราคาขาย', v: noSale.length + ' จ๊อบ', d: 'JT/JM ที่ไม่มีใน Budget Cost Sales',
       cols: [{ k: 'code', t: 'JOB' }, { k: 'name', t: 'ลูกค้า', wrap: true }, { k: 'progress', t: 'สถานะ' }, { k: 'c', t: 'ต้นทุนเต็ม', type: 'num', foot: 'sum', get: function (j) { return cost(j, 'v4'); } }], rows: noSale, job: 1 },
-    { k: 'hrdup', lv: (d.hrDupJobs || []).length ? 'bad' : 'ok', t: 'ACTUAL_WIDE: รหัสซ้ำมีตัวเลข 2 แถว', v: (d.hrDupJobs || []).length + ' จ๊อบ', d: 'เสี่ยงนับค่าแรงซ้ำ — ให้ HR ตรวจ',
+    { k: 'dedup', lv: 'ok', t: 'ACTUAL_WIDE: ตัดแถวซ้ำแล้ว', v: (d.hrDedup || []).length + ' แถว', d: 'เลขจ๊อบซ้ำ + ตัวเลขเหมือนกันทุกช่อง → นับครั้งเดียว (เบียร์สั่ง 7 พ.ย.)',
+      cols: [{ k: 'job', t: 'JOB' }, { k: 'rowFirst', t: 'แถวที่นับ', type: 'num' }, { k: 'row', t: 'แถวที่ตัด', type: 'num' },
+             { k: 'labor', t: 'ค่าแรงที่ไม่นับซ้ำ', type: 'num', dec: 2, foot: 'sum' }, { k: 'contr', t: 'ผรม (คอลัมน์ HR)', type: 'num', dec: 2 }, { k: 'months', t: 'เดือน' }], rows: d.hrDedup || [], job: 1 },
+    { k: 'hrdup', lv: (d.hrDupJobs || []).length ? 'bad' : 'ok', t: 'ACTUAL_WIDE: รหัสซ้ำ ตัวเลขไม่เหมือนกัน', v: (d.hrDupJobs || []).length + ' จ๊อบ', d: 'มีค่าแรงทั้ง 2 แถวแต่ไม่เท่ากัน — ระบบนับรวม ให้ HR ตรวจ',
       cols: [{ k: 'code', t: 'JOB' }, { k: 'labor', t: 'ค่าแรงที่นับ', type: 'num', get: function (r) { var j = s.jobMap[r.code]; return j ? j.labor : 0; } }], rows: (d.hrDupJobs || []).map(function (c) { return { code: c }; }), job: 1 },
     { k: 'tot', lv: (d.hrTotalColDiff || []).length ? 'bad' : 'ok', t: 'ACTUAL_WIDE: คอลัมน์ Total ≠ ผลรวมเดือน', v: (d.hrTotalColDiff || []).length + ' จ๊อบ', d: 'ยกมา + 12 เดือน ต้องเท่ากับ Total ค่าแรงพนักงาน STT',
       cols: [{ k: 'job', t: 'JOB' }, { k: 'sumMonths', t: 'ผลรวมเดือน', type: 'num', dec: 2 }, { k: 'totalCol', t: 'คอลัมน์ Total', type: 'num', dec: 2 }], rows: d.hrTotalColDiff || [] },
