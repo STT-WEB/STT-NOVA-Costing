@@ -99,6 +99,15 @@ if (DATA && fs.existsSync(path.join(DATA, 'fixture.json'))) {
   // 2.6 ไม่มีจ๊อบไหนนับค่าแรงเดือนที่ยังไม่ปิดงวดเข้า "จริง"
   let b3 = 0; s.jobs.forEach(j => { let a = j.laborCF; for (const m in j.laborM) if (s.closed[m]) a += j.laborM[m]; if (!near(a, j.labor, 0.05)) b3++; });
   ok(b3 === 0, 'labor ต้อง = ยกมา + เดือนที่ปิดงวด');
+  // 2.6.1 จ๊อบรวม 2 ฝั่ง (เบียร์สั่ง 7 พ.ย.): ทุกจ๊อบใน JOB_MASTER ต้องอยู่ในระบบ + ทุกจ๊อบใน NOVA ต้องอยู่ในระบบ
+  const jmv = inp.jobMaster, jh = jmv.findIndex(r => r.indexOf('JOB CODE') >= 0), jc = jmv[jh].indexOf('JOB CODE');
+  const mset = new Set(jmv.slice(jh + 1).map(r => E.eJob_(r[jc])).filter(c => /^[A-Z]{1,5}-/.test(c)));
+  ok([...mset].every(c => J[c]), 'จ๊อบใน JOB_MASTER ต้องอยู่ในระบบครบ (' + mset.size + ')');
+  ok(Object.keys(s.novaIndex).every(c => J[c]), 'จ๊อบใน NOVA ต้องอยู่ในระบบครบ');
+  ok(s.jobs.some(j => j.srcKind === 'ค่าแรงอย่างเดียว') && s.jobs.some(j => j.srcKind === 'จัดซื้ออย่างเดียว') && s.jobs.some(j => j.srcKind === 'จัดซื้อ + ค่าแรง'), 'ต้องมีครบ 3 แบบ: จัดซื้อ+ค่าแรง / จัดซื้ออย่างเดียว / ค่าแรงอย่างเดียว');
+  ok(J['JT-69/0044'].progress && J['JT-69/0044'].inMaster === 1, 'ข้อมูลจ๊อบต้องมาจาก JOB_MASTER');
+  ok(s.diag.oddCodes.some(x => x.job === 'JMS-78/0278'), 'ต้องจับรหัสปีผิดปกติ JMS-78/0278 ได้');
+
   // 2.7 แถวซ้ำที่ตัวเลขเหมือนกัน ต้องถูกตัด (เบียร์สั่ง 7 พ.ย.): JMS-69/0235 · JMI-68/0047
   ok(['JMS-69/0235', 'JMI-68/0047'].every(c => s.diag.hrDedup.some(x => x.job === c)), 'ต้องตัดแถวซ้ำ JMS-69/0235 และ JMI-68/0047');
   ok(near(J['JMS-69/0235'].laborM['2026-06'], 1631.05), 'JMS-69/0235 มิ.ย. ต้องนับครั้งเดียว 1,631.05');

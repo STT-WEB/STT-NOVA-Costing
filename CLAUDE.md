@@ -12,7 +12,7 @@ Dashboard ต้นทุนงานจริง: จัดซื้อ (NOVA �
 |---|---|---|
 | NOVA จัดซื้อ | REGISTRY (source=NOVA, Active≠N) — ห้ามฝัง ID | ทุกแท็บจ๊อบ: หมวด · สรุป Supplier · ต้นทุนเข้าจ๊อบ |
 | MASTER | `1ZCKb_KRECWRSRaObBQz4nDUmwazvV2lhoPMj2O5j744` | USERS · REGISTRY · Budget Cost Sales JT/JM |
-| HR JOB COST MASTER | `10u8sLbe6dtGtFtWwAMruvAgrawDOScqEBmJRA3avPcM` | ACTUAL_WIDE · Sale Budget A:C · Estimate Budget · Cost ผรม to HR · Cost ผรม พนักงาน STT… · SRC_YYYY_MM |
+| HR JOB COST MASTER | `10u8sLbe6dtGtFtWwAMruvAgrawDOScqEBmJRA3avPcM` | JOB_MASTER · ACTUAL_WIDE · Sale Budget A:C · Estimate Budget · Cost ผรม to HR · Cost ผรม พนักงาน STT… · SRC_YYYY_MM |
 | JOBTRACK | `1ZPl3uVRtM5r4sPA-yX1OwTyp34XCTIcKRC0Sx8qsr9s` | Job_Log_YYYY_MM (พ.ศ.) · TIMESHEET_DIRECT… |
 
 ## 2. กติกาที่เบียร์เคาะ (6 พ.ย. 2569)
@@ -24,7 +24,8 @@ Dashboard ต้นทุนงานจริง: จัดซื้อ (NOVA �
 4. **เดือนยังไม่ปิดงวด** (แถว "HR ใส่ตัวเลข" ว่าง) = ประมาณการ ชม. × อัตรา (Σต้นทุน SRC ÷ Σชม. SRC ของจ๊อบ · ไม่มีใช้อัตราเดือนล่าสุดทั้งโรงงาน)
 5. **มุมมอง:** ① จัดซื้อ (1–11) ② HR (ค่าแรง+ผรม HR) ③ จัดซื้อ+ค่าแรง STT ④ สินค้า+ค่าแรง STT+ผรมทั้งหมด (ต้นทุนเต็ม)
 6. **แถวซ้ำ (7 พ.ย.):** ACTUAL_WIDE เลขจ๊อบซ้ำ + ตัวเลขเหมือนกันทุกช่อง (ยกมา · 12 เดือน · ผรม) → ตัดแถวหลัง · ตัวเลขไม่เหมือนกัน → ไม่ตัด
-7. **สิทธิ์:** ALLOW ใน 00-config.js มี 3 รหัส (6100030 · 999999 · 888888) + PIN จาก USERS · ทุก endpoint เรียก `requireAuth_` บรรทัดแรก
+7. **จ๊อบรวม 2 ฝั่ง (7 พ.ย.):** ทะเบียน = JOB_MASTER (HR) ∪ NOVA ∪ จ๊อบที่มีค่าแรง/ผรม · ข้อมูลจ๊อบยึด JOB_MASTER · คอลัมน์ srcKind
+8. **สิทธิ์:** ALLOW ใน 00-config.js มี 3 รหัส (6100030 · 999999 · 888888) + PIN จาก USERS · ทุก endpoint เรียก `requireAuth_` บรรทัดแรก
 
 ## 3. Deploy
 GitHub: `STT-WEB/STT-NOVA-Costing` (เบียร์สร้าง repo เอง → `เชื่อม GitHub.bat` ครั้งแรก) · .gitignore แบบ P&S: ไม่ขึ้นรหัส clasp / ข้อมูลจริง / preview

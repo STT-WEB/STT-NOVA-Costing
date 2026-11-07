@@ -5,7 +5,7 @@
  * แหล่งข้อมูล (อ่านอย่างเดียว)
  *  NOVA   : ทุกไฟล์ใน REGISTRY (source = NOVA, Active ≠ N) → ทุกแท็บจ๊อบ → คอลัมน์ หมวด / สรุป Supplier / ต้นทุนเข้าจ๊อบ
  *  MASTER : Budget Cost Sales JT / JM (ราคาขาย)
- *  HR     : ACTUAL_WIDE · Sale Budget (A:C) · Estimate Budget · Cost ผรม to HR · Cost ผรม พนักงาน STT… · SRC_YYYY_MM
+ *  HR     : JOB_MASTER (ทะเบียนจ๊อบ) · ACTUAL_WIDE · Sale Budget (A:C) · Estimate Budget · Cost ผรม to HR · Cost ผรม พนักงาน STT… · SRC_YYYY_MM
  *  JOBTRACK: Job_Log_YYYY_MM ทุกเดือน · TIMESHEET_DIRECT…
  */
 
@@ -64,6 +64,7 @@ function gatherAll_() {
 
   var t2 = Date.now();
   var hrTabs = listTabs_(CFG.HR).map(function (x) { return x.title; });
+  input.jobMaster  = readTab_(CFG.HR, CFG.TAB.JOB_MASTER);
   input.hrWide     = readTab_(CFG.HR, CFG.TAB.HR_WIDE);
   input.saleBudget = readTab_(CFG.HR, CFG.TAB.SALE_BUDGET, 'A:C');
   input.estBudget  = readTab_(CFG.HR, CFG.TAB.EST_BUDGET);

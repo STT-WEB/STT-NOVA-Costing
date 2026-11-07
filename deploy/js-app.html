@@ -372,7 +372,8 @@ function statusPill(j) {
   var s = j.progress || '';
   if (/ส่งมอบ/.test(s)) return '<span class="pill p-ok">' + esc(s) + '</span>';
   if (/WIP/i.test(s)) return '<span class="pill p-info">WIP</span>';
-  if (/ยกเลิก/.test(s)) return '<span class="pill p-mute">' + esc(s) + '</span>';
+  if (/ยกเลิก/.test(s)) return '<span class="pill p-bad">' + esc(s) + '</span>';
+  if (/hold/i.test(s)) return '<span class="pill p-warn">HOLD</span>';
   return s ? '<span class="pill p-mute">' + esc(s) + '</span>' : '';
 }
 function marginCls(v) { return v === null ? 'dim' : v < 0 ? 'neg' : v < 10 ? '' : 'pos'; }
@@ -384,8 +385,10 @@ function jobCols() {
     { k: 'code', t: 'JOB CODE', fmt: function (v) { return '<b>' + esc(v) + '</b>'; } },
     { k: 'name', t: 'ลูกค้า / ชื่องาน', wrap: true },
     { k: 'progress', t: 'สถานะ', fmt: function (v, j) { return statusPill(j); } },
+    { k: 'srcKind', t: 'มีต้นทุนจาก', tip: 'จัดซื้อ + ค่าแรง / จัดซื้ออย่างเดียว / ค่าแรงอย่างเดียว / ยังไม่มีต้นทุน',
+      fmt: function (v) { var c = { 'จัดซื้อ + ค่าแรง': 'p-ok', 'จัดซื้ออย่างเดียว': 'p-info', 'ค่าแรงอย่างเดียว': 'p-est', 'ยังไม่มีต้นทุน': 'p-mute' }[v] || 'p-mute'; return '<span class="pill ' + c + '">' + esc(v) + '</span>'; } },
     { k: 'start', t: 'วันเริ่ม', fkey: function (j) { return (j.start || '').substr(0, 7); } },
-    { k: 'delivery', t: 'ส่งมอบ', fkey: function (j) { return (j.delivery || '').substr(0, 7); } },
+    { k: 'delivery', t: 'ส่งมอบจริง', fkey: function (j) { return (j.delivery || '').substr(0, 7); } },
     { k: 'sale', t: 'ราคาขาย', type: 'num', grp: 'sale', foot: 'sum', tip: 'ไม่รวม VAT · JT จาก Sales Value no vat · JM จาก billaftrDiscAmnt' }
   ];
   var showG = S.view !== 'v2';
@@ -565,6 +568,13 @@ function chkCards() {
     { k: 'nova0', lv: novaZero.length ? 'bad' : 'ok', t: 'อ่านไฟล์ NOVA', v: novaZero.length ? novaZero.length + ' ไฟล์อ่านไม่ได้' : 'อ่านครบ ' + (d.novaFiles || []).length + ' ไฟล์',
       d: novaZero.length ? 'ไฟล์ใน REGISTRY ที่ไม่พบแท็บจ๊อบเลย — ต้นทุนจัดซื้อจะขาด' : 'ทุกไฟล์ใน REGISTRY มีแท็บจ๊อบ',
       cols: [{ k: 'type', t: 'ชนิด' }, { k: 'file', t: 'ไฟล์' }, { k: 'tabs', t: 'แท็บจ๊อบ', type: 'num' }, { k: 'cost', t: 'ต้นทุนรวม', type: 'num', dec: 2, foot: 'sum' }], rows: d.novaFiles || [] },
+    { k: 'master', lv: (d.notInMaster || []).length ? 'warn' : 'ok', t: 'จ๊อบรวม 2 ฝั่ง (JOB_MASTER ∪ NOVA)',
+      v: nf(d.masterCount || 0) + ' จ๊อบใน JOB_MASTER', d: 'มีต้นทุนแต่ไม่อยู่ใน JOB_MASTER ' + (d.notInMaster || []).length + ' จ๊อบ · ' +
+        Object.keys(d.kindCount || {}).map(function (k) { return k + ' ' + nf(d.kindCount[k]); }).join(' · '),
+      cols: [{ k: 'job', t: 'JOB (ไม่อยู่ใน JOB_MASTER)' }, { k: 'kind', t: 'มีต้นทุนจาก' }, { k: 'pTotal', t: 'จัดซื้อ', type: 'num', dec: 2 },
+             { k: 'labor', t: 'ค่าแรง', type: 'num', dec: 2 }, { k: 'contr', t: 'ผรม HR', type: 'num', dec: 2 }], rows: d.notInMaster || [], job: 1 },
+    { k: 'odd', lv: (d.oddCodes || []).length ? 'warn' : 'ok', t: 'รหัสจ๊อบปีผิดปกติ', v: (d.oddCodes || []).length + ' จ๊อบ', d: 'ปีในรหัสเกินปีปัจจุบัน — น่าจะพิมพ์ผิดใน JOB_MASTER',
+      cols: [{ k: 'job', t: 'JOB' }, { k: 'name', t: 'ลูกค้า', wrap: true }, { k: 'kind', t: 'มีต้นทุนจาก' }], rows: d.oddCodes || [], job: 1 },
     { k: 'mon', lv: mBad.length ? 'bad' : 'ok', t: 'ค่าแรง HR รายเดือน', v: mBad.length ? mBad.length + ' เดือนไม่ตรง' : 'ตรงทุกเดือน', d: 'แถว "HR ใส่ตัวเลข" vs ผลรวมทุกจ๊อบใน ACTUAL_WIDE',
       cols: [{ k: 'm', t: 'เดือน' }, { k: 'st', t: 'งวด', get: function (r) { return r.closed ? 'ปิดแล้ว' : 'ยังไม่ปิด'; } }, { k: 'hrInput', t: 'HR ใส่ตัวเลข', type: 'num', dec: 2 },
              { k: 'sumJobs', t: 'ผลรวมทุกจ๊อบ (ตัดแถวซ้ำแล้ว)', type: 'num', dec: 2 }, { k: 'diff', t: 'ส่วนต่าง', type: 'num', dec: 2, cls: function (v) { return Math.abs(v) > 1 ? 'neg' : ''; } },

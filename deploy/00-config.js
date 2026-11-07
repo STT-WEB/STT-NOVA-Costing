@@ -9,7 +9,7 @@
  *  - ป้ายเวอร์ชันบนเว็บดึงจาก COSTING_VERSION ตัวนี้ตัวเดียว (หลักฐานว่า deploy ขึ้นจริง)
  */
 
-var COSTING_VERSION = 'v1.1.1';
+var COSTING_VERSION = 'v1.1.2';
 var COSTING_BUILD   = '2026-11-07';
 
 var CFG = {
@@ -22,7 +22,7 @@ var CFG = {
   // ชื่อแท็บ
   TAB: {
     USERS: 'USERS', REGISTRY: 'REGISTRY', SALES_JT: 'Budget Cost Sales JT', SALES_JM: 'Budget Cost Sales JM',
-    HR_WIDE: 'ACTUAL_WIDE', SALE_BUDGET: 'Sale Budget', EST_BUDGET: 'Estimate Budget',
+    JOB_MASTER: 'JOB_MASTER', HR_WIDE: 'ACTUAL_WIDE', SALE_BUDGET: 'Sale Budget', EST_BUDGET: 'Estimate Budget',
     CONTR_HR: 'Cost ผรม to HR', CONTR_STT_PREFIX: 'Cost ผรม พนักงาน STT'
   },
   SNAP_NAME : 'STT-NOVA-Costing-SNAPSHOT.json',   // ไฟล์เก็บผลคำนวณล่าสุด (ใน Drive ของเจ้าของสคริปต์)

@@ -38,6 +38,7 @@ log = openpyxl.load_workbook(f"{D}/joblog.xlsx", read_only=True, data_only=True)
 inp = {"builtAt": "2026-11-06T18:00:00+07:00"}
 inp["salesJT"] = vals(master["Budget Cost Sales JT"])
 inp["salesJM"] = vals(master["Budget Cost Sales JM"])
+inp["jobMaster"] = vals(hr["JOB_MASTER"])
 inp["hrWide"] = vals(hr["ACTUAL_WIDE"])
 inp["saleBudget"] = [r[:3] for r in vals(hr["Sale Budget"])]
 inp["estBudget"] = vals(hr["Estimate Budget"])
