@@ -113,6 +113,12 @@ if (DATA && fs.existsSync(path.join(DATA, 'fixture.json'))) {
     ['JT-69/0002', 'JT-69/0003'].forEach(c => ok(near(J[c].pTotal, sh / 2 + own[c], 0.02), c + ' = ส่วนกลาง/2 + บรรทัดของคันนี้ (' + (sh / 2 + own[c]).toFixed(2) + ' ได้ ' + J[c].pTotal + ')'));
     ok(near(J['JT-69/0002'].pTotal + J['JT-69/0003'].pTotal, 3602077.22, 0.02), '0002 + 0003 รวมกลับเท่าแท็บ');
   })();
+  // v1.3.0 เดือนเปิดจ๊อบ + Model (All WIP JTJM)
+  ok(J['JT-69/0002'].open === '2026-01-20' && J['JT-69/0002'].openSrc === 'วันที่เอกสารขาย', 'JT-69/0002 เปิดจ๊อบ = DocuDate 2026-01-20');
+  ok(J['JT-66/0094'].model === 'LLPG-52400-01A', 'JT-66/0094 Model จาก All WIP JTJM');
+  ok(s.jobs.filter(j => j.type === 'JT' && j.model).length >= 250, 'JT ต้องมี Model อย่างน้อย 250 จ๊อบ');
+  ok(s.jobs.filter(j => j.type === 'JM' && /^SM/.test(j.model) && j.mname).length >= 500, 'JM ต้องมีประเภทงานซ่อม (SMxx + ชื่อ)');
+  ok(s.jobs.filter(j => (j.pTotal || j.labor) && j.open).length / s.jobs.filter(j => j.pTotal || j.labor).length > 0.8, 'จ๊อบที่มีต้นทุน > 80% ต้องรู้เดือนเปิดจ๊อบ');
   // JMS = งานซ่อม S-one ไม่มีราคาขาย → ไม่ติดป้าย "ไม่พบราคาขาย"
   ok(s.jobs.filter(j => j.type === 'JMS' && j.flags.indexOf('ไม่พบราคาขาย') >= 0).length === 0, 'JMS ต้องไม่ติดป้าย ไม่พบราคาขาย');
   ok(near(J['JT-69/0002'].labor, 80050.11) && near(J['JT-69/0003'].labor, 80298.47), 'ค่าแรง 0002/0003 ใช้ยอด HR ตามจริง ไม่หาร');

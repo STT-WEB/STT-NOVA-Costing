@@ -11,7 +11,7 @@ Dashboard ต้นทุนงานจริง: จัดซื้อ (NOVA �
 | แหล่ง | File ID / ที่มา | แท็บ |
 |---|---|---|
 | NOVA จัดซื้อ | REGISTRY (source=NOVA, Active≠N) — ห้ามฝัง ID | ทุกแท็บจ๊อบ: หมวด · สรุป Supplier · ต้นทุนเข้าจ๊อบ |
-| MASTER | `1ZCKb_KRECWRSRaObBQz4nDUmwazvV2lhoPMj2O5j744` | USERS · REGISTRY · Budget Cost Sales JT/JM |
+| MASTER | `1ZCKb_KRECWRSRaObBQz4nDUmwazvV2lhoPMj2O5j744` | USERS · REGISTRY · Budget Cost Sales JT/JM (DocuDate = เดือนเปิดจ๊อบ) · Cost Purchase 2022-2025 · All WIP JTJM (Model) |
 | HR JOB COST MASTER | `10u8sLbe6dtGtFtWwAMruvAgrawDOScqEBmJRA3avPcM` | JOB_MASTER · ACTUAL_WIDE · Sale Budget A:C · Estimate Budget · Cost ผรม to HR · Cost ผรม พนักงาน STT… · SRC_YYYY_MM |
 | JOBTRACK | `1ZPl3uVRtM5r4sPA-yX1OwTyp34XCTIcKRC0Sx8qsr9s` | Job_Log_YYYY_MM (พ.ศ.) · TIMESHEET_DIRECT… |
 
@@ -47,7 +47,8 @@ GitHub: `STT-WEB/STT-NOVA-Costing` (เบียร์สร้าง repo เ�
 3. `node _tests/guard-v100.js <dir>` · `node _tests/sim-gather.js <dir>` (ต้องมี nova_full.json) · `node tools/build_preview.js <dir> preview/x.html`
 
 ## 5. ค้างอยู่ / ต้องขอจากเบียร์
-- หน้าภาพรวม v1.1.0 = แบบผู้บริหารจอเดียว (เบียร์เลือก 7 พ.ย.) — มุมมอง ② HR ยังเทียบกับราคาขาย อาจควรเทียบงบค่าแรง
+- หน้าภาพรวม v1.3.0 = แบบ NOVA รายเดือน (เบียร์ขอ 9 พ.ย.) เปิดจ๊อบ ↔ ส่งมอบ · คลิกเดือน→งาน→รายละเอียด · หน้า 🚛 ต้นทุนตาม Model (js-ov.html)
+- ค่าแรง HR มีเฉพาะปี 69 (ACTUAL_WIDE) — ปี 65–68 ต้นทุน HR เกือบ 0 · 290 จ๊อบไม่รู้เดือนเปิด (JMS ส่วนใหญ่: ไม่มีเอกสารขาย/วันเริ่ม)
 - ลิงก์ NOVA ใหญ่ใส่ใน CFG.NOVA_URL แล้ว (v1.2.0) · ยังไม่รู้พารามิเตอร์เปิดจ๊อบตรง → ปุ่มคัดลอกเลขจ๊อบให้ (ต้องดูโค้ด NOVA ใหญ่ — เบียร์ต้อง "Add folder" เอง)
 - ราคาขาย JM/JMC (188 จ๊อบ ปี 68–69) ยังไม่พบใน Budget Cost Sales JM
 - ✅ แถวซ้ำใน ACTUAL_WIDE: เบียร์สั่งให้ระบบตัดเอง (เลขจ๊อบซ้ำ + ตัวเลขเหมือนกันทุกช่อง) — v1.1.1

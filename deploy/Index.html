@@ -38,6 +38,7 @@
   </div>
   <div class="tabs" id="tabs">
     <div class="tab on" data-p="ov">📊 ภาพรวม</div>
+    <div class="tab" data-p="model">🚛 ต้นทุนตาม Model</div>
     <div class="tab" data-p="jobs">📋 ต้นทุนรายจ๊อบ</div>
     <div class="tab" data-p="hr">👷 ค่าแรง HR รายเดือน</div>
     <div class="tab" data-p="proc">🛠️ ค่าแรงราย Process</div>
@@ -46,6 +47,7 @@
   <div class="main">
     <div class="bar" id="gbar"></div>
     <div class="page" id="pg-ov"></div>
+    <div class="page hide" id="pg-model"></div>
     <div class="page hide" id="pg-jobs"></div>
     <div class="page hide" id="pg-hr"></div>
     <div class="page hide" id="pg-proc"></div>
@@ -59,6 +61,7 @@
 <?!= include('assets') ?>
 <?!= include('js-table') ?>
 <?!= include('js-app') ?>
+<?!= include('js-ov') ?>
 <?!= include('js-detail') ?>
 </body>
 </html>

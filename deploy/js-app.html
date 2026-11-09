@@ -1,7 +1,7 @@
 <script>
 /* =====================================================================
  * STT NOVA-Costing — หน้าเว็บหลัก
- *  ภาพรวม · ต้นทุนรายจ๊อบ · ค่าแรง HR รายเดือน · ค่าแรงราย Process · กระทบยอด
+ *  (ภาพรวม + Model อยู่ใน js-ov.html) · ต้นทุนรายจ๊อบ · ค่าแรง HR รายเดือน · ค่าแรงราย Process · กระทบยอด
  * ===================================================================== */
 var S = {
   token: '', name: '', snap: null, page: 'ov',
@@ -116,13 +116,13 @@ function cost(j, view) {
 }
 function laborAll(j) { return j.labor + (S.est ? j.laborEst : 0); }
 
-function jobsInScope() {
+function jobsInScope(noYear) {
   var q = S.q.trim().toLowerCase();
-  var anyYear = Object.keys(S.years).length;
+  var anyYear = !noYear && Object.keys(S.years).length;
   return S.snap.jobs.filter(function (j) {
     if (anyYear && !S.years[j.yy]) return false;
     if (!S.types[j.typeG]) return false;
-    if (q && (j.code + ' ' + j.name).toLowerCase().indexOf(q) < 0) return false;
+    if (q && (j.code + ' ' + j.name + ' ' + (j.model || '')).toLowerCase().indexOf(q) < 0) return false;
     return true;
   });
 }
@@ -134,23 +134,27 @@ function renderBar() {
   var years = {}; S.snap.jobs.forEach(function (j) { if (j.yy) years[j.yy] = 1; });
   var ys = Object.keys(years).sort().reverse();
   var h = [];
-  if (S.page !== 'hr' && S.page !== 'proc') {
+  var fixedCols = S.page === 'ov' || S.page === 'model';     // 2 หน้านี้โชว์ จัดซื้อ / HR / รวม พร้อมกันเสมอ
+  if (S.page !== 'hr' && S.page !== 'proc' && !fixedCols) {
     h.push('<span class="lbl">มุมมองต้นทุน</span>');
     VIEWS.forEach(function (v) { h.push('<button class="chip ' + v.k + (S.view === v.k ? ' on' : '') + '" data-view="' + v.k + '" title="' + esc(v.d) + '">' + v.t + '</button>'); });
   }
   h.push('<label class="tog" title="เดือนที่ HR ยังไม่ปิดงวด: ชม.จาก JOBTRACK × อัตราเฉลี่ยของจ๊อบ"><input type="checkbox" id="cbEst"' + (S.est ? ' checked' : '') + '>รวมค่าแรงประมาณการ (เดือนที่ HR ยังไม่ปิดงวด)</label>');
   h.push('<span style="flex-basis:100%;height:0"></span>');
-  h.push('<span class="lbl">ปีจ๊อบ</span>');
-  ys.forEach(function (y) { h.push('<button class="chip' + (S.years[y] ? ' on' : '') + '" data-yy="' + y + '">25' + y + '</button>'); });
-  h.push('<button class="chip' + (!Object.keys(S.years).length ? ' on' : '') + '" data-yy="*">ทุกปี</button>');
+  if (S.page !== 'ov') {                                      // หน้าภาพรวมเลือกปีตามเดือนเปิดจ๊อบ/ส่งมอบเอง
+    h.push('<span class="lbl">ปีจ๊อบ</span>');
+    ys.forEach(function (y) { h.push('<button class="chip' + (S.years[y] ? ' on' : '') + '" data-yy="' + y + '">25' + y + '</button>'); });
+    h.push('<button class="chip' + (!Object.keys(S.years).length ? ' on' : '') + '" data-yy="*">ทุกปี</button>');
+  }
   h.push('<span class="lbl" style="margin-left:10px">ประเภท</span>');
   TYPES.forEach(function (t) {
-    var n = S.snap.jobs.filter(function (j) { return j.typeG === t && (!Object.keys(S.years).length || S.years[j.yy]); }).length;
+    var n = S.snap.jobs.filter(function (j) { return j.typeG === t && (S.page === 'ov' || !Object.keys(S.years).length || S.years[j.yy]); }).length;
     if (!n) return;
     h.push('<button class="chip' + (S.types[t] ? ' on' : '') + '" data-ty="' + t + '">' + t + '<span class="k">' + n + '</span></button>');
   });
-  h.push('<input class="srch" id="gq" placeholder="🔎 ค้นหารหัสจ๊อบ / ชื่อลูกค้า" value="' + esc(S.q) + '">');
-  if (S.page !== 'hr' && S.page !== 'proc') {
+  h.push('<input class="srch" id="gq" placeholder="🔎 ค้นหารหัสจ๊อบ / ชื่อลูกค้า / Model" value="' + esc(S.q) + '">');
+  if (fixedCols) h.push('<span class="viewdef" style="flex-basis:100%">📐 ต้นทุนจัดซื้อ = หมวด 1–11 (รวม ผรม NOVA) · ต้นทุน HR = ค่าแรง STT' + (S.est ? ' + ประมาณการ' : '') + ' + ผรม ฝั่ง HR ที่ไม่ซ้ำ · รวมต้นทุน = ต้นทุนเต็ม ④</span>');
+  else if (S.page !== 'hr' && S.page !== 'proc') {
     var vd = VIEWS.filter(function (v) { return v.k === S.view; })[0];
     h.push('<span class="viewdef" style="flex-basis:100%">📐 ' + esc(vd.d) + (S.est ? ' · รวมประมาณการค่าแรง' : ' · ไม่รวมประมาณการ') + '</span>');
   }
@@ -194,9 +198,10 @@ function renderTop() {
 }
 
 function renderPage() {
-  ['ov', 'jobs', 'hr', 'proc', 'chk'].forEach(function (p) { $('pg-' + p).classList.toggle('hide', p !== S.page); });
+  ['ov', 'model', 'jobs', 'hr', 'proc', 'chk'].forEach(function (p) { $('pg-' + p).classList.toggle('hide', p !== S.page); });
   GT.closePop();
   if (S.page === 'ov') renderOverview();
+  else if (S.page === 'model') renderModel();
   else if (S.page === 'jobs') renderJobs();
   else if (S.page === 'hr') renderHR();
   else if (S.page === 'proc') renderProc();
@@ -206,90 +211,7 @@ function renderPage() {
 /* ---------------- 1) ภาพรวม ---------------- */
 function kpiHtml(cls, l, v, d) { return '<div class="kpi ' + cls + '"><div class="l">' + l + '</div><div class="v">' + v + '</div><div class="d">' + (d || '') + '</div></div>'; }
 
-function renderOverview() {
-  var js = jobsInScope(), parts = viewParts();
-  var sale = 0, saleW = 0, costW = 0, cAll = 0, loss = 0, withSale = 0;
-  var comp = {}; parts.forEach(function (p) { comp[p.k] = 0; });
-  js.forEach(function (j) {
-    var cc = cost(j); cAll += cc; sale += j.sale;
-    var x = partVals(j); parts.forEach(function (p) { comp[p.k] += x[p.k]; });
-    if (j.sale > 0) { withSale++; saleW += j.sale; costW += cc; if (cc > j.sale) loss++; }
-  });
-  var pro = saleW - costW, mg = pct(pro, saleW);
-
-  // รายเดือนตาม "เดือนส่งมอบ" (จ๊อบที่ยังไม่ส่งมอบ = แท่ง "ระหว่างผลิต")
-  var mon = {}, wip = { sale: 0, n: 0 };
-  parts.forEach(function (p) { wip[p.k] = 0; });
-  js.forEach(function (j) {
-    var done = /ส่งมอบ/.test(j.progress || '') && j.delivery;
-    var b = done ? (mon[j.delivery.substr(0, 7)] = mon[j.delivery.substr(0, 7)] || newBucket(parts)) : wip;
-    var x = partVals(j); parts.forEach(function (p) { b[p.k] += x[p.k]; });
-    b.sale += j.sale; b.n++; if (j.sale) { b.sw = (b.sw || 0) + j.sale; b.cw = (b.cw || 0) + cost(j); }
-  });
-  var mk = Object.keys(mon).sort().slice(-12);
-  var nowM = new Date().toISOString().substr(0, 7);
-  var doneM = mk.filter(function (m) { return m < nowM; });           // เทียบเฉพาะเดือนที่จบแล้ว
-  var lastM = doneM[doneM.length - 1], prevM = doneM[doneM.length - 2];
-  function mgOf(b) { return b && b.sw ? pct(b.sw - b.cw, b.sw) : null; }
-  var mL = mgOf(mon[lastM]), mP = mgOf(mon[prevM]);
-  var delta = (mL !== null && mP !== null) ? mL - mP : null;
-  var vt = VIEWS.filter(function (v) { return v.k === S.view; })[0].t;
-
-  var h = ['<div class="ov">'];
-  // ---- แถว 1: ตัวเลขใหญ่ 4 ตัว ----
-  h.push('<div class="ovk">',
-    bigK('sale', 'ราคาขาย (ไม่รวม VAT)', mb(sale), nf(js.length) + ' จ๊อบ · มีราคาขาย ' + nf(withSale)),
-    bigK('cost', 'ต้นทุน · ' + vt, mb(cAll), S.est ? 'รวมค่าแรงประมาณการ ' + mb(comp.est || 0) : 'ไม่รวมประมาณการ'),
-    bigK(pro >= 0 ? 'pro' : 'loss', 'กำไรขั้นต้น', mb(pro), 'คิดเฉพาะจ๊อบที่มีราคาขาย · ขาดทุน ' + loss + ' จ๊อบ'),
-    bigK(mg !== null && mg >= 0 ? 'pro' : 'loss', '% กำไร', pf(mg),
-      lastM ? 'ส่งมอบ ' + thM(lastM) + ' ' + pf(mL) + (delta === null ? '' : ' <b class="' + (delta >= 0 ? 'up' : 'dn') + '">' + (delta >= 0 ? '▲' : '▼') + ' ' + Math.abs(delta).toFixed(1) + ' จุด</b> จาก ' + thM(prevM)) : ''),
-    '</div>');
-
-  // ---- แถว 2 ซ้าย: กราฟรายเดือน ----
-  h.push('<div class="ovg">');
-  h.push('<div class="card ovc"><h3>ต้นทุน vs ราคาขาย ตามเดือนส่งมอบ <span class="h-sub">แท่ง = ต้นทุน · เส้นดำ = ราคาขาย · คลิกแท่งเพื่อดูจ๊อบ</span></h3>' +
-    legendHtml(parts) + '<div class="chartwrap" id="ovChart"></div></div>');
-  // ---- แถว 2 ขวา: จ๊อบเสี่ยง ----
-  var watch = js.filter(function (j) { return j.sale > 0 && cost(j) > 0; }).map(function (j) {
-    var c2 = cost(j); return { j: j, c: c2, p: j.sale - c2, m: pct(j.sale - c2, j.sale) };
-  }).sort(function (a, b) { return a.p - b.p; }).slice(0, 10);
-  h.push('<div class="card ovc"><h3>🔥 จ๊อบเสี่ยง Top 10 <span class="h-sub">กำไรน้อยสุด / ขาดทุนมากสุด (บาท)</span></h3><div class="risk">');
-  var mxL = 1; watch.forEach(function (w) { mxL = Math.max(mxL, Math.abs(w.p)); });
-  watch.forEach(function (w, i) {
-    h.push('<div class="rk" data-job="' + w.j.code + '"><span class="no">' + (i + 1) + '</span><div class="rn"><b>' + esc(w.j.code) + '</b><small>' + esc(w.j.name) + '</small></div>' +
-      '<div class="rb"><i style="width:' + (Math.abs(w.p) / mxL * 100) + '%;background:' + (w.p < 0 ? 'var(--bad)' : 'var(--warn)') + '"></i></div>' +
-      '<div class="rv ' + (w.p < 0 ? 'neg' : '') + '">' + nf(w.p) + '<small>' + pf(w.m) + '</small></div></div>');
-  });
-  if (!watch.length) h.push('<div class="note">ไม่มีจ๊อบที่มีทั้งราคาขายและต้นทุนในขอบเขตนี้</div>');
-  h.push('</div><a class="lnk" id="ovAll" style="margin-top:6px;font-size:12px">ดูทุกจ๊อบเรียงตามกำไร →</a></div>');
-
-  // ---- แถว 3 ซ้าย: โดนัทสัดส่วน ----
-  var tot = 0; parts.forEach(function (p) { tot += comp[p.k]; });
-  h.push('<div class="card ovc"><h3>สัดส่วนต้นทุน <span class="h-sub">' + esc(vt) + '</span></h3><div class="donutrow">' + donut(parts, comp, tot) + '<div class="dleg">');
-  parts.forEach(function (p) {
-    h.push('<div><i style="background:' + p.c + '"></i><span>' + p.t + '</span><b>' + mb(comp[p.k]) + '</b><em>' + pf(pct(comp[p.k], tot), 0) + '</em></div>');
-  });
-  h.push('<div class="dsum"><span>ต้นทุน / ราคาขาย</span><b>' + pf(pct(costW, saleW)) + '</b></div></div></div></div>');
-
-  // ---- แถว 3 ขวา: สถานะข้อมูล ----
-  var cards = chkCards(), nb = cards.filter(function (c) { return c.lv === 'bad'; }), nw = cards.filter(function (c) { return c.lv === 'warn'; });
-  var at = S.snap.builtAt ? new Date(S.snap.builtAt) : null;
-  var cl = S.snap.months.filter(function (m) { return S.snap.closed[m]; });
-  h.push('<div class="card ovc"><h3>สถานะข้อมูล</h3><div class="stat">' +
-    '<div class="st ' + (nb.length ? 'bad' : nw.length ? 'warn' : 'ok') + '" id="ovChk"><b>' + (nb.length ? '❌ ' + nb.length + ' จุดต้องแก้' : nw.length ? '⚠️ ' + nw.length + ' จุดควรตรวจ' : '✅ ข้อมูลตรงทุกจุด') + '</b>' +
-    '<small>' + (nb.length ? nb.map(function (c) { return c.t; }).slice(0, 3).join(' · ') : nw.length ? nw.map(function (c) { return c.t; }).slice(0, 2).join(' · ') : 'กระทบยอดผ่านทั้งหมด') + '</small><span class="go">ไปหน้ากระทบยอด →</span></div>' +
-    '<div class="st"><b>🕒 ' + (at ? at.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.' : '-') + '</b><small>อัปเดตล่าสุด ' + (at ? at.toLocaleDateString('th-TH', { dateStyle: 'medium' }) : '') + ' · อัตโนมัติทุก 10 นาที</small></div>' +
-    '<div class="st"><b>👷 HR ปิดงวดถึง ' + (cl.length ? thM(cl[cl.length - 1]) : '-') + '</b><small>เดือนหลังจากนั้นเป็นค่าแรงประมาณการ (สีส้ม)</small></div>' +
-    '<div class="st"><b>🛒 NOVA ' + nf((S.snap.diag.novaFiles || []).length) + ' ไฟล์ · ' + nf(S.snap.diag.novaTabs) + ' แท็บ</b><small>' + nf(S.snap.diag.novaLines) + ' บรรทัดที่มีต้นทุน</small></div>' +
-    '</div></div>');
-  h.push('</div></div>');
-
-  var pg = $('pg-ov'); pg.innerHTML = h.join('');
-  drawMonthChart($('ovChart'), mk, mon, wip, parts);
-  pg.querySelectorAll('[data-job]').forEach(function (r) { r.onclick = function () { openDetail(r.getAttribute('data-job')); }; });
-  $('ovAll').onclick = function () { GT.state.jobs = { f: {}, sort: { k: 'profit', dir: 1 } }; S.page = 'jobs'; setTab(); renderAll(); };
-  $('ovChk').onclick = function () { S.page = 'chk'; setTab(); renderAll(); };
-}
+/* renderOverview() อยู่ใน js-ov.html (v1.3.0: แบบ NOVA รายเดือน) */
 
 function newBucket(parts) { var b = { sale: 0, n: 0 }; parts.forEach(function (p) { b[p.k] = 0; }); return b; }
 function partVals(j) { return { goods: j.goods, cn: j.p.c11, labor: j.labor, est: S.est ? j.laborEst : 0, ch: j.cHR }; }
@@ -311,7 +233,8 @@ function donut(parts, comp, tot) {
 }
 
 /** กราฟแท่งซ้อน (ต้นทุน) + เส้นราคาขาย — วาดด้วย SVG */
-function drawMonthChart(el, mk, mon, wip, parts) {
+function drawMonthChart(el, mk, mon, wip, parts, onPick, lblFn) {
+  var lab = function (k) { return k === 'WIP' ? 'ระหว่างผลิต' : lblFn ? lblFn(k) : thM(k); };
   var keys = mk.slice(); if (wip.n) keys.push('WIP');
   var get = function (k) { return k === 'WIP' ? wip : mon[k]; };
   if (!keys.length) { el.innerHTML = '<div class="note">ไม่มีข้อมูลในขอบเขตนี้</div>'; return; }
@@ -326,7 +249,7 @@ function drawMonthChart(el, mk, mon, wip, parts) {
   }
   var pts = [];
   keys.forEach(function (k, i) {
-    var b = get(k), x = L + i * bw + bw * .18, w = bw * .64, acc = 0;
+    var b = get(k) || { sale: 0 }, x = L + i * bw + bw * .18, w = bw * .64, acc = 0;
     s.push('<g class="mbar" data-m="' + k + '"><rect x="' + (L + i * bw) + '" y="' + T + '" width="' + bw + '" height="' + (H - T - B) + '" fill="transparent"/>');
     parts.forEach(function (p) {
       var v = b[p.k]; if (v <= 0) return;
@@ -335,7 +258,7 @@ function drawMonthChart(el, mk, mon, wip, parts) {
     });
     var m = b.sw ? pct(b.sw - b.cw, b.sw) : null;
     if (m !== null) s.push('<text x="' + (x + w / 2) + '" y="' + (Math.min(y(acc), y(b.sale)) - 7) + '" text-anchor="middle" class="ml ' + (k === 'WIP' ? 'wip' : m < 0 ? 'neg' : '') + '">' + m.toFixed(0) + '%' + (k === 'WIP' ? ' (ยังไม่จบ)' : '') + '</text>');
-    s.push('<text x="' + (x + w / 2) + '" y="' + (H - 10) + '" text-anchor="middle" class="ax">' + (k === 'WIP' ? 'ระหว่างผลิต' : thM(k)) + '</text></g>');
+    s.push('<text x="' + (x + w / 2) + '" y="' + (H - 10) + '" text-anchor="middle" class="ax">' + lab(k) + '</text></g>');
     if (b.sale) pts.push([x + w / 2, y(b.sale), k, b.sale]);
   });
   if (pts.length) {
@@ -347,6 +270,7 @@ function drawMonthChart(el, mk, mon, wip, parts) {
   el.querySelectorAll('.mbar').forEach(function (g) {
     g.onclick = function () {
       var m = g.getAttribute('data-m');
+      if (onPick) { onPick(m); return; }
       GT.state.jobs = { f: {}, sort: { k: 'profit', dir: 1 } };
       if (m === 'WIP') GT.state.jobs.f.progress = { q: 'WIP' };
       else { var st = {}; st[m] = 1; GT.state.jobs.f.delivery = { set: st }; }
@@ -394,6 +318,8 @@ function jobCols() {
     { k: 'progress', t: 'สถานะ', fmt: function (v, j) { return statusPill(j); } },
     { k: 'srcKind', t: 'มีต้นทุนจาก', tip: 'จัดซื้อ + ค่าแรง / จัดซื้ออย่างเดียว / ค่าแรงอย่างเดียว / ยังไม่มีต้นทุน',
       fmt: function (v) { var c = { 'จัดซื้อ + ค่าแรง': 'p-ok', 'จัดซื้ออย่างเดียว': 'p-info', 'ค่าแรงอย่างเดียว': 'p-est', 'ยังไม่มีต้นทุน': 'p-mute' }[v] || 'p-mute'; return '<span class="pill ' + c + '">' + esc(v) + '</span>'; } },
+    { k: 'model', t: 'Model / ประเภทงาน', get: function (j) { return j.model ? j.model + (j.mname ? ' · ' + j.mname : '') : ''; } },
+    { k: 'open', t: 'เปิดจ๊อบ', fkey: function (j) { return (j.open || '').substr(0, 7); }, tip: 'วันที่เอกสารขาย · ไม่มี → วันเริ่มงาน' },
     { k: 'start', t: 'วันเริ่ม', fkey: function (j) { return (j.start || '').substr(0, 7); } },
     { k: 'delivery', t: 'ส่งมอบจริง', fkey: function (j) { return (j.delivery || '').substr(0, 7); } },
     { k: 'sale', t: 'ราคาขาย', type: 'num', grp: 'sale', foot: 'sum', tip: 'ไม่รวม VAT · JT จาก Sales Value no vat · JM จาก billaftrDiscAmnt' }

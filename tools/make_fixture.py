@@ -39,6 +39,7 @@ inp = {"builtAt": "2026-11-06T18:00:00+07:00"}
 inp["salesJT"] = vals(master["Budget Cost Sales JT"])
 inp["salesJM"] = vals(master["Budget Cost Sales JM"])
 inp["jobMaster"] = vals(hr["JOB_MASTER"])
+inp["wip"] = vals(master["All WIP JTJM"]) if "All WIP JTJM" in master.sheetnames else []
 inp["histCost"] = vals(master["Cost Purchase 2022-2025"]) if "Cost Purchase 2022-2025" in master.sheetnames else []
 inp["hrWide"] = vals(hr["ACTUAL_WIDE"])
 inp["saleBudget"] = [r[:3] for r in vals(hr["Sale Budget"])]
@@ -74,13 +75,14 @@ for ftype, fname, path in [("JT", "STT-DB-JT-2569", "jt2569.xlsx"), ("JM", "STT-
         c_cat, c_v, c_cost, c_n = 0, ci("สรุป Supplier"), ci("ต้นทุนเข้าจ๊อบ"), ci("หมายเหตุจาก BOM")
         g = lambda r, c: (r[c] if len(r) > c else "")
         data = [[g(r, c_cat), g(r, c_v), g(r, c_cost), g(r, c_n)] for r in rows[hdr_i + 1:]]
-        hd = {"jobNo": "", "jobName": "", "units": 0}
+        hd = {"jobNo": "", "jobName": "", "units": 0, "model": ""}
         for r in head:
             a = str(r[0]).strip().upper() if r else ""
             b = r[1] if r and len(r) > 1 else ""
             if a == "JOB NO": hd["jobNo"] = b
             elif a == "JOB NAME": hd["jobName"] = b
             elif a.startswith("TOTAL JOB"): hd["units"] = b
+            elif a == "MODEL": hd["model"] = b
         tabs.append({"title": t, "sheetId": i, "head": hd, "rows": data})
     nova.append({"fileType": ftype, "fileId": "FID_" + ftype, "fileName": fname, "tabs": tabs})
 inp["nova"] = nova

@@ -250,4 +250,41 @@ a.lnk:hover{text-decoration:underline}
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:12px;font-weight:700;z-index:300;box-shadow:var(--shadow)}
 @media (max-width:1100px){.kpis{grid-template-columns:repeat(3,1fr)}.grid2{grid-template-columns:1fr}.ovk{grid-template-columns:repeat(2,1fr)}.ovg{grid-template-columns:1fr;grid-template-rows:auto}.ov{overflow:auto}.dk{grid-template-columns:repeat(3,1fr)}.chk-grid{grid-template-columns:repeat(2,1fr)}}
 @media print{.tabs,.bar,.top .sp,.me,#busy{display:none}}
+
+/* ---- v1.3.0 ภาพรวมแบบ NOVA (รายเดือน) + ต้นทุนตาม Model ---- */
+#pg-ov{overflow:auto}
+.ov2{display:flex;flex-direction:column;gap:10px;padding-bottom:12px}
+.ovbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:#fff;border-radius:14px;box-shadow:var(--shadow);padding:8px 12px}
+.ovbar .lbl{font-weight:800;font-size:12.5px;color:var(--ink2)}
+.ovbar .hint{font-size:12px;color:var(--mute);margin-left:8px}
+.ovk5{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.ovk5 .kpi.big .v{font-size:28px}
+.ovk5 .kpi.big .v small{font-size:16px;font-weight:800;margin-left:4px}
+.kpi.lab{border-color:var(--c-labor)} .kpi.lab .v{color:var(--c-labor)}
+.kpi.tot{border-color:var(--red)} .kpi.tot .v{color:var(--red)}
+.kpi.cost .v{color:var(--c-goods)}
+.mtwrap{overflow:auto}
+table.mt{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+table.mt th{background:#2B2840;color:#fff;font-weight:700;padding:8px 10px;text-align:left;white-space:nowrap;position:sticky;top:0;z-index:2}
+table.mt th.g-sale{background:#0F766E} table.mt th.g-goods{background:#1D4ED8} table.mt th.g-labor{background:#15803D} table.mt th.g-tot{background:#E31E24}
+table.mt td{padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.mt .n{text-align:right}
+table.mt td.b{font-weight:800}
+table.mt td.neg{color:var(--bad);font-weight:700} table.mt td.pos{color:var(--ok);font-weight:700}
+table.mt tr.mr.click{cursor:pointer}
+table.mt tr.mr.click:hover td{background:#FFF8E6}
+table.mt tr.mr.empty td{color:#B9B6CC}
+table.mt tr.mr.open td{background:#FFF4D6;font-weight:700;border-bottom-color:#E9C46A}
+table.mt .caret{display:inline-block;width:14px;color:var(--red);font-weight:800}
+table.mt tr.mx>td{padding:6px 6px 12px;background:#FFFBF0}
+table.mt tr.mx .tbox{max-height:56vh;min-height:120px;box-shadow:none;border:1px solid var(--line)}
+table.mt tfoot td{background:#FFF4D6;font-weight:800;border-top:2px solid #E9C46A}
+table.mt tbody.rest tr td{background:#F6F5FB}
+.ovg2{display:grid;grid-template-columns:1.2fr 1fr;gap:10px}
+.ovg2 .risk{max-height:330px}
+#pg-model{gap:8px}
+.mdsel{display:flex;align-items:center;gap:10px;font-size:14px;padding:2px 4px}
+table.gt tbody tr.sel td{background:#FFF4D6!important;font-weight:700}
+table.gt th.g-avg{background:#5B5675}
+@media (max-width:1100px){.ovk5{grid-template-columns:repeat(2,minmax(0,1fr))}.ovg2{grid-template-columns:1fr}}
 </style>
