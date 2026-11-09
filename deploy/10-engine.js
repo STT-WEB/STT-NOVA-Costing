@@ -28,7 +28,7 @@ var COST_CATS = [
   { k: 'c9',  n: 9,  label: '9. Consume' },
   { k: 'c10', n: 10, label: '10. Machine Part' },
   { k: 'c11', n: 11, label: '11. Subcontractor (ผู้รับเหมา)' },
-  { k: 'c0',  n: 0,  label: 'ไม่ระบุหมวด (ใน NOVA)' }
+  { k: 'c0',  n: 0,  label: 'ไม่ระบุหมวด' }
 ];
 
 /* ---------------- ตัวช่วยพื้นฐาน ---------------- */
@@ -211,7 +211,8 @@ function eNovaCols_(hdr) {
   return {
     cat:    eCol_(hdr, ['หมวด']),
     vendor: eCol_(hdr, ['สรุป Supplier']),
-    cost:   eCol_(hdr, ['ต้นทุนเข้าจ๊อบ'])
+    cost:   eCol_(hdr, ['ต้นทุนเข้าจ๊อบ']),
+    note:   eCol_(hdr, ['หมายเหตุจาก BOM'])     // แท็บรวมหลายคัน: Consume ระบุคันที่เบิกไว้ตรงนี้ (เช่น JT-69/0002)
   };
 }
 
@@ -236,7 +237,7 @@ function eBuildSnapshot_(input) {
     if (!J[code]) {
       var r = { code: code, type: eJobType_(code), name: '', start: '', delivery: '', progress: '',
                 sale: 0, saleSrc: '', budgetCost: 0, laborBudget: 0, estLabor: 0,
-                p: {}, pTotal: 0, pTabs: [], pShared: 0,
+                p: {}, pTotal: 0, pTabs: [], pShared: 0, pSrc: '',
                 laborCF: 0, laborM: {}, laborEstM: {}, labor: 0, laborEst: 0, laborTotalCol: null,
                 cNova: 0, cHR: 0, cHRdup: 0, cSTT: 0, cHRlines: 0, cHRofficial: 0, cHRgap: 0, hrContrCol: null,
                 srcHours: 0, srcPeople: 0, srcM: {}, rate: 0,
@@ -278,7 +279,7 @@ function eBuildSnapshot_(input) {
   var novaIndex = {};                     // job -> [{fileId, sheetId, title, units}]
   var novaC11 = {};                       // job -> [{vendor, full, share, title}]
   D.novaTabs = 0; D.novaLines = 0; D.novaCost = 0; D.novaUnitsMismatch = []; D.novaCancelled = []; D.novaNoCat = [];
-  D.novaFiles = [];
+  D.novaFiles = []; D.novaPerCar = [];
   (input.nova || []).forEach(function (f) {
     var fCost = 0, fTabs = 0;
     (f.tabs || []).forEach(function (t) {
@@ -290,34 +291,106 @@ function eBuildSnapshot_(input) {
       if (headUnits && headUnits !== units) {
         D.novaUnitsMismatch.push({ file: f.fileName, tab: t.title, tabJobs: units, totalJob: headUnits });
       }
-      var sums = {}, c11 = [], noCat = 0;
+      // แท็บรวมหลายคัน (เบียร์ยืนยัน 9 พ.ย.): ทั้งแท็บหารเท่ากัน ยกเว้นบรรทัดที่ระบุคันไว้ใน "หมายเหตุจาก BOM"
+      // (ส่วนใหญ่เป็น 9. Consume เพราะแต่ละคันเบิกไม่เท่ากัน) → บรรทัดนั้นลงคันนั้นคันเดียวเต็มจำนวน
+      var inTab = {}; tj.jobs.forEach(function (c0) { inTab[c0] = 1; });
+      var sums = {}, own = {}, c11 = [], noCat = 0, ownAmt = 0;
       (t.rows || []).forEach(function (r) {
         var cost = eNum_(r[2]);
         if (!cost) return;
         var k = eCat_(r[0]);
-        sums[k] = (sums[k] || 0) + cost;
+        var who = units > 1 ? eJob_(r[3]) : '';
+        if (who && !inTab[who]) who = '';
+        if (who) { own[who] = own[who] || {}; own[who][k] = (own[who][k] || 0) + cost; ownAmt += cost; }
+        else sums[k] = (sums[k] || 0) + cost;
         D.novaLines++;
         if (k === 'c0') noCat += cost;
-        if (k === 'c11') c11.push({ vendor: eStr_(r[1]), full: cost });
+        if (k === 'c11') c11.push({ vendor: eStr_(r[1]), full: cost, who: who });
       });
-      var tabTotal = 0; for (var kk in sums) tabTotal += sums[kk];
+      var tabTotal = ownAmt; for (var kk in sums) tabTotal += sums[kk];
       fCost += tabTotal; fTabs++; D.novaTabs++;
       if (noCat) D.novaNoCat.push({ file: f.fileName, tab: t.title, amount: eRound2_(noCat) });
+      if (units > 1) {
+        var byCar = {}; tj.jobs.forEach(function (c0) { var o = 0, m0 = own[c0] || {}; for (var k0 in m0) o += m0[k0]; byCar[c0] = eRound2_(o); });
+        D.novaPerCar.push({ file: f.fileName, tab: t.title, units: units, shared: eRound2_(tabTotal - ownAmt), own: eRound2_(ownAmt), byCar: byCar });
+      }
       tj.jobs.forEach(function (code) {
         var r = job_(code);
         if (!r.name && t.head && t.head.jobName) r.name = t.head.jobName;
         for (var k2 in sums) r.p[k2] += sums[k2] / units;
-        r.pTabs.push(t.title + (units > 1 ? ' (หาร ' + units + ' คัน)' : ''));
+        var mine = own[code] || {};
+        for (var k3 in mine) r.p[k3] += mine[k3];
+        r.pTabs.push(t.title + (units > 1 ? ' (หาร ' + units + ' คัน' + (ownAmt ? ' · บรรทัดระบุคันลงตรง' : '') + ')' : ''));
         if (units > 1) r.pShared = Math.max(r.pShared, units);
+        r.pSrc = r.pSrc || 'NOVA';
         (novaIndex[code] = novaIndex[code] || []).push({ fileId: f.fileId, sheetId: t.sheetId, title: t.title, units: units });
         c11.forEach(function (x) {
-          (novaC11[code] = novaC11[code] || []).push({ vendor: x.vendor, full: x.full, share: x.full / units, title: t.title });
+          if (x.who && x.who !== code) return;
+          var sh = x.who ? x.full : x.full / units;
+          (novaC11[code] = novaC11[code] || []).push({ vendor: x.vendor, full: x.full, share: sh, title: t.title });
         });
       });
     });
     D.novaCost += fCost;
     D.novaFiles.push({ type: f.fileType, file: f.fileName, tabs: fTabs, cost: eRound2_(fCost) });
   });
+
+  /* ---- 2.1b ต้นทุนจัดซื้อย้อนหลัง ปี 65–68 (MASTER จัดซื้อ แท็บ "Cost Purchase 2022-2025") ----
+   * เบียร์บอก 9 พ.ย. 2569: ต้นทุนปี 68 (และก่อนหน้า) อยู่ในไฟล์ Master ของจัดซื้อ — 1 แถว = 1 จ๊อบ (ยอดต่อคันแล้ว ไม่หาร)
+   * หมวดจับคู่ตามชื่อหัวคอลัมน์ (Main Mat … Subcontractor) · TOTAL COST ≠ ผลรวมหมวด → ส่วนต่างลง "ไม่ระบุหมวด"
+   * จ๊อบที่มีแท็บใน NOVA แล้ว → ยึด NOVA (ไม่นับซ้ำ) แล้วโชว์ในหน้ากระทบยอด */
+  D.hist = { rows: 0, used: 0, cost: 0, overlap: [], noCat: [], dup: [], bad: [], has: 0 };
+  (function () {
+    var v = input.histCost || [];
+    if (!v.length) return;
+    var h = eFindHdrRow_(v, 'TOTAL COST', 5);
+    if (h < 0) { D.notes.push('ไม่พบหัวตาราง TOTAL COST ในแท็บ Cost Purchase 2022-2025'); return; }
+    D.hist.has = 1;
+    var hdr = v[h];
+    var iJ = eColExact_(hdr, 'JOB'), iT = eColExact_(hdr, 'TOTAL COST'), iN = eCol_(hdr, ['JOB NAME SALE']),
+        iSt = eCol_(hdr, ['สถานะ COST']), iW = eCol_(hdr, ['สถานะงาน']), iD = eCol_(hdr, ['วันที่ส่งมอบ']),
+        iBC = eCol_(hdr, ['Budget cost จาก Sale']);
+    var catCol = [];
+    COST_CATS.forEach(function (c) {
+      if (c.k === 'c0') return;
+      var nm = c.label.replace(/^\d+\.\s*/, '').replace(/\s*\(.*\)\s*$/, '');
+      var i = eColExact_(hdr, nm);
+      if (i >= 0) catCol.push({ k: c.k, i: i });
+      else D.notes.push('Cost Purchase 2022-2025: ไม่พบคอลัมน์หมวด "' + nm + '"');
+    });
+    var seen = {};
+    for (var i = h + 1; i < v.length; i++) {
+      var row = v[i] || [];
+      var raw = eStr_(row[iJ]); if (!raw) continue;
+      var code = eJob_(raw);
+      var total = eNum_(row[iT]);
+      if (!eIsJob_(code)) { D.hist.bad.push({ row: i + 1, job: raw, total: eRound2_(total) }); continue; }
+      D.hist.rows++;
+      var p = {}, sum = 0;
+      catCol.forEach(function (c) { var x = eNum_(row[c.i]); if (x) { p[c.k] = x; sum += x; } });
+      var sig = JSON.stringify([p, total]);
+      if (seen[code]) {
+        D.hist.dup.push({ row: i + 1, job: code, total: eRound2_(total), same: seen[code] === sig ? 1 : 0 });
+        continue;                                // รหัสซ้ำในแท็บ: นับแถวแรกครั้งเดียว
+      }
+      seen[code] = sig;
+      if (!total && !sum) continue;
+      if (novaIndex[code]) { D.hist.overlap.push({ job: code, total: eRound2_(total) }); continue; }
+      var gap = (total || sum) - sum;
+      if (Math.abs(gap) > 1) { p.c0 = gap; D.hist.noCat.push({ job: code, total: eRound2_(total), sumCat: eRound2_(sum), gap: eRound2_(gap) }); }
+      var r = job_(code);
+      for (var k in p) r.p[k] += p[k];
+      r.pSrc = 'MASTER 2022-2025';
+      r.pTabs.push('MASTER จัดซื้อ: Cost Purchase 2022-2025');
+      r.hist = { status: eStr_(row[iSt]), work: eStr_(row[iW]), total: eRound2_(total) };
+      if (!r.name && iN >= 0) r.name = eStr_(row[iN]);
+      if (!r.delivery && iD >= 0) r.delivery = eDate_(row[iD]);
+      if (!r.budgetCost && iBC >= 0) r.budgetCost = eNum_(row[iBC]);
+      if (p.c11) (novaC11[code] = novaC11[code] || []).push({ vendor: '', full: p.c11, share: p.c11, title: 'Cost Purchase 2022-2025' });
+      D.hist.used++; D.hist.cost += total || sum;
+    }
+    D.hist.cost = eRound2_(D.hist.cost);
+  })();
 
   /* ---- 2.2 ราคาขาย ---- */
   D.salesDupJT = [];
@@ -649,6 +722,7 @@ function eBuildSnapshot_(input) {
     var sj = input._saleJT && input._saleJT[code];
     if (sj) { r.sale = sj.sale; r.saleSrc = 'Sales JT'; r.budgetCost = sj.bc; }
     else if (input._saleJM && input._saleJM[code] !== undefined) { r.sale = input._saleJM[code]; r.saleSrc = 'Sales JM'; }
+    if (!r.sale && r.type === 'JMS') { r.noSaleOK = 1; r.saleSrc = 'งานซ่อม S-one (ไม่มีราคาขาย)'; }   // เบียร์ยืนยัน 9 พ.ย.
     r.laborBudget = laborBudget[code] || 0;
     r.estLabor = estLabor[code] || 0;
     var pt = 0; for (var k in r.p) { r.p[k] = eRound2_(r.p[k]); pt += r.p[k]; }
@@ -673,14 +747,14 @@ function eBuildSnapshot_(input) {
     }
     var hasBuy = r.pTotal !== 0, hasLab = (r.labor + r.laborEst + r.laborOpenPartial) !== 0 || r.cHRofficial !== 0;
     r.srcKind = hasBuy && hasLab ? 'จัดซื้อ + ค่าแรง' : hasBuy ? 'จัดซื้ออย่างเดียว' : hasLab ? 'ค่าแรงอย่างเดียว' : 'ยังไม่มีต้นทุน';
-    if (!r.inMaster) r.flags.push('ไม่อยู่ใน JOB_MASTER');
+    if (!r.inMaster && r.pSrc !== 'MASTER 2022-2025') r.flags.push('ไม่อยู่ใน JOB_MASTER');   // จ๊อบเก่าปี 65–68 ไม่อยู่ในทะเบียน HR เป็นปกติ
     if (/ยกเลิก/.test(r.progress || '') && (hasBuy || hasLab)) r.flags.push('สถานะยกเลิก แต่มีต้นทุน');
     if (r.pShared) r.flags.push('แบ่งจัดซื้อจากแท็บรวม ' + r.pShared + ' คัน');
     if (r.cHRdup) r.flags.push('ตัด ผรม ซ้ำ ' + r.cHRdup.toLocaleString('en-US'));
     if (Math.abs(r.cHRgap) > 1) r.flags.push('ผรม HR: ยอดรวมไม่ตรงรายบรรทัด');
-    if (!r.sale && (r.type === 'JT' || r.type.indexOf('JM') === 0)) r.flags.push('ไม่พบราคาขาย');
+    if (!r.sale && !r.noSaleOK && (r.type === 'JT' || r.type.indexOf('JM') === 0)) r.flags.push('ไม่พบราคาขาย');
     if (r.pTotal && !r.labor && !r.laborEst && r.type === 'JT') r.flags.push('มีจัดซื้อ แต่ไม่มีค่าแรง');
-    if (r.p.c0) r.flags.push('มีบรรทัดไม่ระบุหมวดใน NOVA');
+    if (r.p.c0) r.flags.push(r.pSrc === 'MASTER 2022-2025' ? 'MASTER 2022-2025: TOTAL ≠ ผลรวมหมวด' : 'มีบรรทัดไม่ระบุหมวดใน NOVA');
   });
 
   /* ---- 2.11 กระทบยอดรายเดือนของ HR ---- */
@@ -718,7 +792,7 @@ function eBuildSnapshot_(input) {
   });
 
   var jobs = Object.keys(J).sort().map(function (c) { return J[c]; });
-  D.notInMaster = jobs.filter(function (r) { return !r.inMaster && r.srcKind !== 'ยังไม่มีต้นทุน'; })
+  D.notInMaster = jobs.filter(function (r) { return !r.inMaster && r.pSrc !== 'MASTER 2022-2025' && r.srcKind !== 'ยังไม่มีต้นทุน'; })
     .map(function (r) { return { job: r.code, kind: r.srcKind, pTotal: r.pTotal, labor: eRound2_(r.labor + r.laborEst), contr: r.cHRofficial }; });
   D.kindCount = {}; jobs.forEach(function (r) { D.kindCount[r.srcKind] = (D.kindCount[r.srcKind] || 0) + 1; });
   // ปีในรหัสจ๊อบเกินปีปัจจุบัน (เช่น JMS-78/0278) = น่าจะพิมพ์ผิดใน JOB_MASTER

@@ -39,6 +39,7 @@ inp = {"builtAt": "2026-11-06T18:00:00+07:00"}
 inp["salesJT"] = vals(master["Budget Cost Sales JT"])
 inp["salesJM"] = vals(master["Budget Cost Sales JM"])
 inp["jobMaster"] = vals(hr["JOB_MASTER"])
+inp["histCost"] = vals(master["Cost Purchase 2022-2025"]) if "Cost Purchase 2022-2025" in master.sheetnames else []
 inp["hrWide"] = vals(hr["ACTUAL_WIDE"])
 inp["saleBudget"] = [r[:3] for r in vals(hr["Sale Budget"])]
 inp["estBudget"] = vals(hr["Estimate Budget"])
@@ -53,7 +54,7 @@ for n in hr.sheetnames:
 inp["logs"] = [{"title": n, "values": vals(log[n])} for n in log.sheetnames if re.match(r"^Job_Log_\d{4}_\d{2}$", n)]
 inp["tsd"] = [{"title": n, "values": vals(log[n])} for n in log.sheetnames if n.upper().startswith("TIMESHEET_DIRECT")]
 
-# NOVA: จำลองสิ่งที่ 20-gather.js ดึงมา (หัวแท็บ + 3 คอลัมน์)
+# NOVA: จำลองสิ่งที่ 20-gather.js ดึงมา (หัวแท็บ + 4 คอลัมน์)
 nova = []
 for ftype, fname, path in [("JT", "STT-DB-JT-2569", "jt2569.xlsx"), ("JM", "STT-DB-JM-2569", "jm2569.xlsx")]:
     wb = openpyxl.load_workbook(f"{D}/{path}", read_only=True, data_only=True)
@@ -70,8 +71,9 @@ for ftype, fname, path in [("JT", "STT-DB-JT-2569", "jt2569.xlsx"), ("JM", "STT-
         hdr = rows[hdr_i]
         def ci(name):
             return [str(x).strip() for x in hdr].index(name)
-        c_cat, c_v, c_cost = 0, ci("สรุป Supplier"), ci("ต้นทุนเข้าจ๊อบ")
-        data = [[(r[c_cat] if len(r) > c_cat else ""), (r[c_v] if len(r) > c_v else ""), (r[c_cost] if len(r) > c_cost else "")] for r in rows[hdr_i + 1:]]
+        c_cat, c_v, c_cost, c_n = 0, ci("สรุป Supplier"), ci("ต้นทุนเข้าจ๊อบ"), ci("หมายเหตุจาก BOM")
+        g = lambda r, c: (r[c] if len(r) > c else "")
+        data = [[g(r, c_cat), g(r, c_v), g(r, c_cost), g(r, c_n)] for r in rows[hdr_i + 1:]]
         hd = {"jobNo": "", "jobName": "", "units": 0}
         for r in head:
             a = str(r[0]).strip().upper() if r else ""

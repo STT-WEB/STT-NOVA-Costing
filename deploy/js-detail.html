@@ -30,8 +30,8 @@ function drawDetail() {
     '</div></div><button class="xbtn" id="dX">✕</button></div><div class="dbody">'];
   h.push('<div class="dk">',
     kpiHtml('sale', 'ราคาขาย', nf(j.sale), j.saleSrc || 'ไม่พบราคาขาย'),
-    kpiHtml('cost', 'สินค้า (หมวด 1–10)', nf(j.goods), j.pShared ? 'หารจากแท็บรวม ' + j.pShared + ' คัน' : 'NOVA'),
-    kpiHtml('', 'ผรม NOVA (หมวด 11)', nf(j.p.c11), 'ยึดเป็นยอดหลัก'),
+    kpiHtml('cost', 'สินค้า (หมวด 1–10)', nf(j.goods), j.pSrc === 'MASTER 2022-2025' ? 'MASTER 2022-2025' : j.pShared ? 'แท็บรวม ' + j.pShared + ' คัน' : 'NOVA'),
+    kpiHtml('', 'ผรม จัดซื้อ (หมวด 11)', nf(j.p.c11), 'ยึดเป็นยอดหลัก'),
     kpiHtml('pro', 'ค่าแรง STT (จริง)', nf(j.labor), 'ยกมา ' + nf(j.laborCF)),
     kpiHtml('est', 'ค่าแรงประมาณการ', nf(j.laborEst), S.est ? 'รวมในต้นทุน' : 'ไม่ได้รวม'),
     kpiHtml('', 'ผรม HR (ไม่ซ้ำ)', nf(j.cHR), j.cHRdup ? 'ตัดซ้ำ ' + nf(j.cHRdup) : 'ไม่มีรายการซ้ำ'),
@@ -41,7 +41,7 @@ function drawDetail() {
   segs.forEach(function (s) { if (s.v > 0) h.push('<span style="width:' + (s.v / base * 100) + '%;background:' + s.c + '" title="' + s.t + ' ' + nf(s.v) + '">' + (s.v / base > .07 ? s.t + ' ' + pf(s.v / (j.sale || full) * 100, 0) : '') + '</span>'); });
   if (prof > 0) h.push('<span style="width:' + (prof / base * 100) + '%;background:repeating-linear-gradient(45deg,#D1FAE5,#D1FAE5 6px,#A7F3D0 6px,#A7F3D0 12px);color:#065F46">กำไร ' + pf(pct(prof, j.sale), 0) + '</span>');
   h.push('</div>' + legendHtml(segs.map(function (s) { return { t: s.t, c: s.c }; })) + '</div>');
-  h.push('<div class="dtabs">' + [['buy', '🛒 จัดซื้อ (NOVA)'], ['hr', '👷 ค่าแรง HR'], ['con', '🤝 ผู้รับเหมา'], ['days', '📅 วันทำงาน']].map(function (t) {
+  h.push('<div class="dtabs">' + [['buy', '🛒 จัดซื้อ'], ['hr', '👷 ค่าแรง HR'], ['con', '🤝 ผู้รับเหมา'], ['days', '📅 วันทำงาน']].map(function (t) {
     return '<div class="dtab' + (DT.tab === t[0] ? ' on' : '') + '" data-t="' + t[0] + '">' + t[1] + '</div>';
   }).join('') + '</div><div class="dsec" id="dSec"></div></div></div>');
   $('detail').innerHTML = h.join('');
@@ -58,16 +58,27 @@ function secBuy(j) {
   var links = idx.map(function (x) {
     return '<a class="lnk" target="_blank" href="https://docs.google.com/spreadsheets/d/' + x.fileId + '/edit#gid=' + x.sheetId + '">📄 แท็บ ' + esc(x.title) + '</a>';
   }).join(' · ');
-  var h = ['<div class="note blue">ต้นทุน = คอลัมน์ "ต้นทุนเข้าจ๊อบ" ใน NOVA (สูตรเดียวกับหน้าต้นทุนของ NOVA) · ' +
-    (j.pShared ? '<b>แท็บนี้รวม ' + j.pShared + ' คัน → ระบบหารเท่ากันต่อคัน</b> · ' : '') +
-    (links ? 'เปิดดูต้นฉบับ: ' + links : 'ไม่พบแท็บจ๊อบนี้ใน NOVA') + ' <span id="novaBtn"></span></div>'];
+  var h = [];
+  if (j.pSrc === 'MASTER 2022-2025') {
+    h.push('<div class="note blue">ต้นทุนจ๊อบนี้มาจาก <b>MASTER จัดซื้อ แท็บ "Cost Purchase 2022-2025"</b> (ยอดต่อคัน · แยกหมวดตามหัวคอลัมน์)' +
+      (j.hist ? ' · สถานะ COST: <b>' + esc(j.hist.status || '-') + '</b> · สถานะงาน: ' + esc(j.hist.work || '-') + ' · TOTAL COST ' + nf(j.hist.total, 2) : '') +
+      (S.snap.masterId ? ' · <a class="lnk" target="_blank" href="https://docs.google.com/spreadsheets/d/' + esc(S.snap.masterId) + '/edit">📄 เปิดไฟล์ MASTER</a>' : '') +
+      (j.p.c0 ? '<br>⚠️ TOTAL COST ไม่เท่ากับผลรวมหมวด → ส่วนต่าง ' + nf(j.p.c0, 2) + ' ลงเป็น "ไม่ระบุหมวด"' : '') + '</div>');
+  } else {
+    h.push('<div class="note blue">ต้นทุน = คอลัมน์ "ต้นทุนเข้าจ๊อบ" ใน NOVA (สูตรเดียวกับหน้าต้นทุนของ NOVA) · ' +
+      (j.pShared ? '<b>แท็บนี้รวม ' + j.pShared + ' คัน → หารเท่ากันต่อคัน ยกเว้นบรรทัดที่ระบุคันไว้ในช่อง "หมายเหตุจาก BOM" (เช่น Consume) ลงคันนั้นเต็มจำนวน</b> · ' : '') +
+      (links ? 'เปิดดูต้นฉบับ: ' + links : 'ไม่พบแท็บจ๊อบนี้ใน NOVA') + ' <span id="novaBtn"></span></div>');
+  }
   h.push('<div class="tbox" id="tCat" style="flex:none;max-height:none"></div><div id="buyLines"><div class="note">⏳ กำลังโหลดรายการจัดซื้อรายบรรทัดจาก NOVA…</div></div>');
   el.innerHTML = h.join('');
   GT.create($('tCat'), { id: 'dcat', cols: [{ k: 'cat', t: 'หมวด' }, { k: 'v', t: 'ต้นทุนเข้าจ๊อบ (ต่อคัน)', type: 'num', dec: 2, grp: 'goods', foot: 'sum' },
     { k: 'p', t: '% ของจัดซื้อ', type: 'num', dec: 1, get: function (r) { return pct(r.v, j.pTotal); }, fmt: function (v) { return pf(v); } }], rows: cats });
   if (!idx.length) { $('buyLines').innerHTML = ''; return; }
   var draw = function (res) {
-    if (res.novaUrl) $('novaBtn').innerHTML = '· <a class="lnk" target="_blank" href="' + esc(res.novaUrl) + (res.novaUrl.indexOf('?') >= 0 ? '&' : '?') + 'job=' + encodeURIComponent(j.code) + '">🔗 เปิดจ๊อบนี้ใน NOVA</a>';
+    if (res.novaUrl) {
+      $('novaBtn').innerHTML = '· <a class="lnk" id="novaGo" target="_blank" href="' + esc(res.novaUrl) + (res.novaUrl.indexOf('?') >= 0 ? '&' : '?') + 'job=' + encodeURIComponent(j.code) + '" title="เปิดเว็บ NOVA และคัดลอกเลขจ๊อบไว้ให้ วางในช่องค้นหาได้เลย">🔗 เปิด NOVA (คัดลอก ' + esc(j.code) + ' ให้แล้ว)</a>';
+      $('novaGo').onclick = function () { try { navigator.clipboard.writeText(j.code); } catch (e) {} };
+    }
     var rows = [];
     res.tabs.forEach(function (t) { (t.rows || []).forEach(function (r) { var o = { _tab: t.title + (t.units > 1 ? ' (÷' + t.units + ')' : '') }; t.cols.forEach(function (c, i) { o[c] = r[i]; }); rows.push(o); }); });
     var cols = [{ k: '_tab', t: 'แท็บ NOVA' }];
@@ -76,7 +87,7 @@ function secBuy(j) {
       cols.push({ k: c, t: c, type: num ? 'num' : undefined, dec: num ? 2 : undefined, wrap: /NAME|DESCRIPTION/.test(c), foot: c === 'ต้นทุนเข้าจ๊อบ' ? 'sum' : null,
                   grp: c === 'ต้นทุนเข้าจ๊อบ' ? 'tot' : null });
     });
-    $('buyLines').innerHTML = '<div class="cnt" style="margin:4px 0">รายการจัดซื้อรายบรรทัด (สด จาก NOVA) · ยอด "ต้นทุนเข้าจ๊อบ" ด้านล่างเป็นยอดทั้งแท็บ ยังไม่หารคัน</div><div class="tbox" id="tBuy"></div>';
+    $('buyLines').innerHTML = '<div class="cnt" style="margin:4px 0">รายการจัดซื้อรายบรรทัด (สด จาก NOVA) · ยอด "ต้นทุนเข้าจ๊อบ" ด้านล่างเป็นยอดทั้งแท็บ ยังไม่หารคัน · ช่อง "หมายเหตุจาก BOM" = คันที่เบิก</div><div class="tbox" id="tBuy"></div>';
     GT.create($('tBuy'), { id: 'dbuy', cols: cols, rows: rows, frozen: 1 });
   };
   if (DT.buy) draw(DT.buy);

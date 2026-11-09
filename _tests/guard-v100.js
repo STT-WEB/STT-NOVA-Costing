@@ -74,7 +74,20 @@ if (DATA && fs.existsSync(path.join(DATA, 'fixture.json'))) {
   // 2.2 ต้นทุน NOVA ทุกบาทต้องลงจ๊อบครบ (หารคันแล้วรวมกลับต้องเท่าเดิม)
   let raw = 0; inp.nova.forEach(f => f.tabs.forEach(t => { if (/ยกเลิก/.test(t.title)) return; t.rows.forEach(r => raw += Number(r[2]) || 0); }));
   let alloc = 0; s.jobs.forEach(j => alloc += j.pTotal);
-  ok(near(raw, alloc, 1), 'ต้นทุน NOVA ดิบ ' + raw.toFixed(2) + ' ≠ ที่ลงจ๊อบ ' + alloc.toFixed(2));
+  const hist = (s.diag.hist && s.diag.hist.cost) || 0;
+  ok(near(raw + hist, alloc, 1), 'ต้นทุน NOVA ดิบ ' + raw.toFixed(2) + ' + ย้อนหลัง ' + hist.toFixed(2) + ' ≠ ที่ลงจ๊อบ ' + alloc.toFixed(2));
+  // 2.2b ต้นทุนย้อนหลัง 65–68 (MASTER จัดซื้อ) — คำนวณอิสระจากแท็บดิบ: แถวแรกของแต่ละจ๊อบ ที่ไม่มีแท็บใน NOVA
+  if ((inp.histCost || []).length) {
+    const hv = inp.histCost, hh = hv[0].map(x => String(x).trim()), iJ = hh.indexOf('JOB'), iT = hh.indexOf('TOTAL COST');
+    let hraw = 0, seen = {};
+    for (let i = 1; i < hv.length; i++) { const c = String(hv[i][iJ] || '').trim(); if (!c || seen[c]) continue; seen[c] = 1; if (!s.novaIndex[c]) hraw += Number(hv[i][iT]) || 0; }
+    ok(near(hraw, hist, 1), 'ต้นทุนย้อนหลังที่ลงจ๊อบ ' + hist.toFixed(2) + ' ≠ TOTAL COST ในแท็บ ' + hraw.toFixed(2));
+    ok(s.diag.hist.used > 300, 'ต้องใช้ต้นทุนย้อนหลังได้ > 300 จ๊อบ (ได้ ' + s.diag.hist.used + ')');
+    const h68 = J['JT-68/0068'];
+    ok(h68 && h68.pSrc === 'MASTER 2022-2025' && near(h68.pTotal, 1129660.32, 0.02) && near(h68.p.c11, 27000), 'JT-68/0068 ต้องได้ต้นทุนจาก MASTER 1,129,660.32 (ผรม 27,000)');
+    ok(h68 && h68.cHRdup >= 27000 - 1, 'JT-68/0068 ผรม HR 27,000 ต้องจับคู่กับหมวด 11 ของ MASTER (ไม่นับซ้ำ)');
+    ok(h68 && h68.flags.indexOf('ไม่อยู่ใน JOB_MASTER') < 0, 'จ๊อบย้อนหลังไม่ติดป้าย ไม่อยู่ใน JOB_MASTER');
+  }
   ok(near(raw, s.diag.novaCost, 1), 'diag.novaCost ต้องเท่ายอดดิบ');
   // 2.3 ค่าแรงราย Process ของเดือนที่ปิดงวด รวมกลับต้องเท่าค่าแรงจ๊อบเดือนนั้น
   const pj = {}; s.proc.forEach(p => { if (s.closed[p[1]]) { const k = p[0] + '|' + p[1]; pj[k] = (pj[k] || 0) + p[7]; } });
@@ -90,7 +103,18 @@ if (DATA && fs.existsSync(path.join(DATA, 'fixture.json'))) {
   ok(near(j1.p.c11, 27000) && near(j1.cHRdup, 27000), 'JT-69/0001 ผรม ซ้ำ 27,000 ต้องถูกตัด');
   ok(near(j1.labor, 82026.21), 'JT-69/0001 ค่าแรง STT');
   ok(near(j1.cHRofficial, 161154.64) && near(j1.cHR, 134154.64), 'JT-69/0001 ผรม HR');
-  ['JT-69/0002', 'JT-69/0003'].forEach(c => ok(near(J[c].pTotal, 3602077.22 / 2, 0.02), c + ' ต้องได้จัดซื้อครึ่งหนึ่งของแท็บรวม'));
+  // แท็บรวม 2 คัน: หารเท่ากัน ยกเว้นบรรทัดที่ "หมายเหตุจาก BOM" ระบุคัน → ลงคันนั้นเต็ม (เบียร์ยืนยัน 9 พ.ย.)
+  (function () {
+    const t = inp.nova[0].tabs.find(x => x.title === 'JT-69/0002-0003');
+    let sh = 0, own = { 'JT-69/0002': 0, 'JT-69/0003': 0 };
+    t.rows.forEach(r => { const v = Number(r[2]) || 0, w = String(r[3] || '').trim(); if (own[w] !== undefined) own[w] += v; else sh += v; });
+    ok(near(sh + own['JT-69/0002'] + own['JT-69/0003'], 3602077.22, 0.02), 'แท็บ JT-69/0002-0003 รวม 3,602,077.22');
+    ok(own['JT-69/0002'] + own['JT-69/0003'] > 0, 'แท็บ JT-69/0002-0003 ต้องมีบรรทัดที่ระบุคัน');
+    ['JT-69/0002', 'JT-69/0003'].forEach(c => ok(near(J[c].pTotal, sh / 2 + own[c], 0.02), c + ' = ส่วนกลาง/2 + บรรทัดของคันนี้ (' + (sh / 2 + own[c]).toFixed(2) + ' ได้ ' + J[c].pTotal + ')'));
+    ok(near(J['JT-69/0002'].pTotal + J['JT-69/0003'].pTotal, 3602077.22, 0.02), '0002 + 0003 รวมกลับเท่าแท็บ');
+  })();
+  // JMS = งานซ่อม S-one ไม่มีราคาขาย → ไม่ติดป้าย "ไม่พบราคาขาย"
+  ok(s.jobs.filter(j => j.type === 'JMS' && j.flags.indexOf('ไม่พบราคาขาย') >= 0).length === 0, 'JMS ต้องไม่ติดป้าย ไม่พบราคาขาย');
   ok(near(J['JT-69/0002'].labor, 80050.11) && near(J['JT-69/0003'].labor, 80298.47), 'ค่าแรง 0002/0003 ใช้ยอด HR ตามจริง ไม่หาร');
   ok(near(J['JT-69/0003'].cHRdup, 32000), 'JT-69/0003 ส่วนที่ HR ไม่มีบรรทัด 27,000 + 5,000 ต้องจับคู่กับ NOVA');
   const j44 = J['JT-69/0044'];

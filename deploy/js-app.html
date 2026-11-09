@@ -564,15 +564,19 @@ function renderProc() {
 /* ---------------- 5) กระทบยอด ---------------- */
 function chkCards() {
   var s = S.snap, d = s.diag;
-  var noSale = s.jobs.filter(function (j) { return !j.sale && (j.goods + j.p.c11 + j.labor + j.cHR) > 0 && (j.type === 'JT' || j.type.indexOf('JM') === 0); });
+  var noSale = s.jobs.filter(function (j) { return !j.sale && !j.noSaleOK && (j.goods + j.p.c11 + j.labor + j.cHR) > 0 && (j.type === 'JT' || j.type.indexOf('JM') === 0); });
   var mBad = s.monthCheck.filter(function (m) { return m.closed && Math.abs(m.diff) > 1; });
   var cov = s.coverage.filter(function (c) { return c[4] < 80 && c[1] >= '2026-05'; });
   var dup = s.contr.filter(function (c) { return c.dup; }), sus = s.contr.filter(function (c) { return c.suspect; });
   var dupAmt = 0; dup.forEach(function (c) { dupAmt += c.amount; });
   var skipped = (d.novaCancelled || []).map(function (x) { return { file: x.file, tab: x.tab, why: 'แท็บยกเลิก (ไม่นับ)' }; }).concat(d.novaSkipped || []);
-  var novaZero = (d.novaFiles || []).filter(function (f) { return !f.tabs || f.pending || f.stale; });
+  // ไฟล์ที่อ่านสำเร็จแต่ไม่มีแท็บจ๊อบ (เช่น STT-DB-JT-2568 มีแค่ Template) = ไฟล์ว่าง ไม่ใช่อ่านพัง
+  (d.novaFiles || []).forEach(function (f) { if (!f.tabs && !f.pending && !f.stale && /อ่านใหม่|ไม่มีการแก้/.test(f.state || '')) f.state = 'ไฟล์ว่าง — ไม่มีแท็บจ๊อบ (มีแค่ Template)'; });
+  var novaZero = (d.novaFiles || []).filter(function (f) { return f.pending || f.stale || (!f.tabs && !/ไฟล์ว่าง/.test(f.state || '')); });
+  var novaEmpty = (d.novaFiles || []).filter(function (f) { return /ไฟล์ว่าง/.test(f.state || ''); });
   return [
-    { k: 'nova0', lv: novaZero.length ? 'bad' : 'ok', t: 'อ่านไฟล์ NOVA', v: novaZero.length ? novaZero.length + ' ไฟล์อ่านไม่ได้' : 'อ่านครบ ' + (d.novaFiles || []).length + ' ไฟล์',
+    { k: 'nova0', lv: novaZero.length ? 'bad' : novaEmpty.length ? 'warn' : 'ok', t: 'อ่านไฟล์ NOVA',
+      v: novaZero.length ? novaZero.length + ' ไฟล์อ่านไม่ได้/ไม่ครบ' : 'อ่านครบ ' + (d.novaFiles || []).length + ' ไฟล์' + (novaEmpty.length ? ' (ว่าง ' + novaEmpty.length + ')' : ''),
       d: novaZero.length ? 'ไฟล์ที่ยังอ่านไม่ได้ / ยังอ่านไม่ทัน — ต้นทุนจัดซื้อของไฟล์นั้นยังไม่ขึ้นหรือเป็นของรอบก่อน' : 'ทุกไฟล์ใน REGISTRY อ่านได้',
       cols: [{ k: 'type', t: 'ชนิด' }, { k: 'file', t: 'ไฟล์' }, { k: 'tabs', t: 'แท็บจ๊อบ', type: 'num' }, { k: 'cost', t: 'ต้นทุนรวม', type: 'num', dec: 2, foot: 'sum' },
              { k: 'state', t: 'สถานะการอ่าน', cls: function (v, r) { return r.pending || r.stale || !r.tabs ? 'neg' : ''; } }, { k: 'readAt', t: 'อ่านล่าสุด' }], rows: d.novaFiles || [] },
@@ -597,11 +601,20 @@ function chkCards() {
       cols: [{ k: 'job', t: 'JOB' }, { k: 'official', t: 'ยอดทางการ HR', type: 'num', dec: 2 }, { k: 'pivot', t: 'ตารางสรุปขวา', type: 'num', dec: 2 }, { k: 'lines', t: 'ผลรวมรายบรรทัด', type: 'num', dec: 2 }, { k: 'gap', t: 'ไม่มีรายละเอียด', type: 'num', dec: 2, cls: function () { return 'neg'; } }], rows: d.contrGap || [] },
     { k: 'nojob', lv: (d.contrHRnoJob || []).length ? 'warn' : 'ok', t: 'ผรม HR ที่ไม่ใช่จ๊อบ', v: (d.contrHRnoJob || []).length + ' รายการ', d: 'เช่น โรงงาน / งานซ่อมอาคาร — ไม่นับเข้าจ๊อบ',
       cols: [{ k: 'job', t: 'รหัส' }, { k: 'vendor', t: 'ผู้รับเหมา' }, { k: 'desc', t: 'รายละเอียด', wrap: true }, { k: 'amount', t: 'ยอด', type: 'num', dec: 2, foot: 'sum' }], rows: d.contrHRnoJob || [] },
-    { k: 'units', lv: (d.novaUnitsMismatch || []).length ? 'warn' : 'ok', t: 'NOVA: จำนวนคันไม่ตรงชื่อแท็บ', v: (d.novaUnitsMismatch || []).length + ' แท็บ', d: 'ระบบหารตามจำนวนจ๊อบในชื่อแท็บ',
+    { k: 'hist', lv: !(d.hist && d.hist.has) ? 'bad' : (d.hist.noCat || []).length ? 'warn' : 'ok', t: 'ต้นทุนจัดซื้อย้อนหลัง ปี 65–68 (MASTER จัดซื้อ)',
+      v: d.hist && d.hist.has ? nf(d.hist.used) + ' จ๊อบ · ' + nf(d.hist.cost) + ' บาท' : 'อ่านแท็บไม่ได้',
+      d: d.hist && d.hist.has ? 'แท็บ Cost Purchase 2022-2025 · ' + nf(d.hist.rows) + ' แถว · ยอดต่อคัน ไม่หาร · ' + (d.hist.overlap || []).length + ' จ๊อบมีใน NOVA แล้ว (ยึด NOVA) · ' + (d.hist.dup || []).length + ' แถวรหัสซ้ำ (นับครั้งเดียว) · ตารางด้านล่าง = แถวที่ TOTAL COST ≠ ผลรวมหมวด (ส่วนต่างลง "ไม่ระบุหมวด")' : 'ไม่พบแท็บ Cost Purchase 2022-2025 ในไฟล์ MASTER',
+      cols: [{ k: 'job', t: 'JOB' }, { k: 'total', t: 'TOTAL COST', type: 'num', dec: 2, foot: 'sum' }, { k: 'sumCat', t: 'ผลรวมหมวด', type: 'num', dec: 2, foot: 'sum' }, { k: 'gap', t: 'ไม่ระบุหมวด', type: 'num', dec: 2, foot: 'sum' }], rows: (d.hist && d.hist.noCat) || [] },
+    { k: 'histov', lv: (d.hist && d.hist.overlap || []).length ? 'warn' : 'ok', t: 'ย้อนหลัง 65–68: จ๊อบที่มีทั้ง MASTER และ NOVA', v: ((d.hist && d.hist.overlap) || []).length + ' จ๊อบ', d: 'ยึดยอด NOVA · ไม่นับยอด MASTER ซ้ำ',
+      cols: [{ k: 'job', t: 'JOB' }, { k: 'total', t: 'TOTAL COST ใน MASTER (ไม่นับ)', type: 'num', dec: 2, foot: 'sum' }, { k: 'nova', t: 'ยอดที่ใช้ (NOVA)', type: 'num', dec: 2, foot: 'sum', get: function (r) { var j = s.jobMap[r.job]; return j ? j.pTotal : 0; } }], rows: (d.hist && d.hist.overlap) || [], job: 1 },
+    { k: 'percar', lv: 'ok', t: 'แท็บรวมหลายคัน: บรรทัดที่ระบุคัน', v: (d.novaPerCar || []).length + ' แท็บ', d: 'หารเท่ากันทั้งแท็บ ยกเว้นบรรทัดที่ช่อง "หมายเหตุจาก BOM" ระบุคัน (ส่วนใหญ่ Consume) → ลงคันนั้นเต็มจำนวน (เบียร์ยืนยัน 9 พ.ย.)',
+      cols: [{ k: 'file', t: 'ไฟล์' }, { k: 'tab', t: 'แท็บ' }, { k: 'units', t: 'คัน', type: 'num' }, { k: 'shared', t: 'หารเท่ากัน', type: 'num', dec: 2, foot: 'sum' }, { k: 'own', t: 'ลงรายคัน', type: 'num', dec: 2, foot: 'sum' },
+             { k: 'cars', t: 'ยอดลงรายคัน', wrap: true, get: function (r) { return Object.keys(r.byCar || {}).map(function (c) { return c + ' = ' + nf(r.byCar[c], 2); }).join(' · '); } }], rows: d.novaPerCar || [] },
+    { k: 'units', lv: (d.novaUnitsMismatch || []).length ? 'warn' : 'ok', t: 'NOVA: จำนวนคันไม่ตรงชื่อแท็บ', v: (d.novaUnitsMismatch || []).length + ' แท็บ', d: 'ระบบหารตามจำนวนจ๊อบในชื่อแท็บ (บรรทัดที่ระบุคันลงคันนั้นตรง)',
       cols: [{ k: 'file', t: 'ไฟล์' }, { k: 'tab', t: 'แท็บ' }, { k: 'tabJobs', t: 'จ๊อบในชื่อแท็บ', type: 'num' }, { k: 'totalJob', t: 'TOTAL JOB (คัน)', type: 'num' }], rows: d.novaUnitsMismatch || [] },
     { k: 'nocat', lv: (d.novaNoCat || []).length ? 'warn' : 'ok', t: 'NOVA: บรรทัดไม่ระบุหมวด', v: (d.novaNoCat || []).length + ' แท็บ', d: 'มีต้นทุนแต่ช่อง "หมวด" ว่าง — นับเป็น "ไม่ระบุหมวด"',
       cols: [{ k: 'file', t: 'ไฟล์' }, { k: 'tab', t: 'แท็บ' }, { k: 'amount', t: 'ยอด', type: 'num', dec: 2, foot: 'sum' }], rows: d.novaNoCat || [] },
-    { k: 'nosale', lv: noSale.length ? 'warn' : 'ok', t: 'จ๊อบมีต้นทุน แต่ไม่พบราคาขาย', v: noSale.length + ' จ๊อบ', d: 'JT/JM ที่ไม่มีใน Budget Cost Sales',
+    { k: 'nosale', lv: noSale.length ? 'warn' : 'ok', t: 'จ๊อบมีต้นทุน แต่ไม่พบราคาขาย', v: noSale.length + ' จ๊อบ', d: 'JT/JM ที่ไม่มีใน Budget Cost Sales (ไม่รวม JMS = งานซ่อม S-one ไม่มีราคาขาย)',
       cols: [{ k: 'code', t: 'JOB' }, { k: 'name', t: 'ลูกค้า', wrap: true }, { k: 'progress', t: 'สถานะ' }, { k: 'c', t: 'ต้นทุนเต็ม', type: 'num', foot: 'sum', get: function (j) { return cost(j, 'v4'); } }], rows: noSale, job: 1 },
     { k: 'dedup', lv: 'ok', t: 'ACTUAL_WIDE: ตัดแถวซ้ำแล้ว', v: (d.hrDedup || []).length + ' แถว', d: 'เลขจ๊อบซ้ำ + ตัวเลขเหมือนกันทุกช่อง → นับครั้งเดียว (เบียร์สั่ง 7 พ.ย.)',
       cols: [{ k: 'job', t: 'JOB' }, { k: 'rowFirst', t: 'แถวที่นับ', type: 'num' }, { k: 'row', t: 'แถวที่ตัด', type: 'num' },

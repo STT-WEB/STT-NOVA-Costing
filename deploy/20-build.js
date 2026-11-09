@@ -4,11 +4,12 @@
  *
  * แหล่งข้อมูล (อ่านอย่างเดียว)
  *  NOVA   : ทุกไฟล์ใน REGISTRY (source = NOVA, Active ≠ N) → ทุกแท็บจ๊อบ → คอลัมน์ หมวด / สรุป Supplier / ต้นทุนเข้าจ๊อบ
- *  MASTER : Budget Cost Sales JT / JM (ราคาขาย)
+ *  MASTER : Budget Cost Sales JT / JM (ราคาขาย) · Cost Purchase 2022-2025 (ต้นทุนจัดซื้อย้อนหลัง ปี 65–68)
  *  HR     : JOB_MASTER (ทะเบียนจ๊อบ) · ACTUAL_WIDE · Sale Budget (A:C) · Estimate Budget · Cost ผรม to HR · Cost ผรม พนักงาน STT… · SRC_YYYY_MM
  *  JOBTRACK: Job_Log_YYYY_MM ทุกเดือน · TIMESHEET_DIRECT…
  */
 
+var NOVA_SCHEMA = 2;             // 2 = เก็บคอลัมน์ "หมายเหตุจาก BOM" (ระบุคัน) ด้วย — แคชรุ่นเก่าจะถูกอ่านใหม่
 var NOVA_BUDGET_MS = 230000;     // อ่าน NOVA ได้ไม่เกิน ~4 นาทีต่อรอบ (Apps Script ตัดที่ 6 นาที) — ไฟล์ที่เหลืออ่านต่อรอบถัดไป
 
 /** อ่านไฟล์ NOVA ทุกไฟล์ — ไฟล์ที่ไม่ได้แก้ใช้ผลเดิม · หมดเวลาแล้วไฟล์ที่เหลือใช้ผลเดิม (ถ้ามี) */
@@ -17,20 +18,20 @@ function gatherNova_(t0) {
   return novaFiles_().map(function (f) {
     var stamp = fileStamp_(f.fileId);
     var c = novaCacheGet_(f.fileId);
-    if (c && stamp && c.stamp === stamp) { c.state = 'ไม่มีการแก้ (ใช้ผลรอบก่อน)'; return c; }
+    if (c && stamp && c.stamp === stamp && c.schema === NOVA_SCHEMA) { c.state = 'ไม่มีการแก้ (ใช้ผลรอบก่อน)'; return c; }
     if (Date.now() - t0 > NOVA_BUDGET_MS) {
       if (c) { c.state = 'ข้อมูลรอบก่อน — รออ่านใหม่รอบถัดไป'; c.stale = 1; return c; }
       return { fileType: f.fileType, fileId: f.fileId, fileName: f.fileName, tabs: [], skipped: [], pending: 1, state: 'ยังอ่านไม่ทัน — อ่านต่อรอบถัดไป' };
     }
     var res = readNovaFile_(f);
-    res.stamp = stamp; res.readAt = new Date().toISOString();
+    res.stamp = stamp; res.schema = NOVA_SCHEMA; res.readAt = new Date().toISOString();
     novaCacheSet_(f.fileId, res);
     res.state = 'อ่านใหม่';
     return res;
   });
 }
 
-/** อ่านไฟล์ NOVA 1 ไฟล์: (1) หัวแท็บ+หัวตาราง ช่วงเดียว A2:BZ12 (2) 3 คอลัมน์ หมวด/ต้นทุน/Supplier */
+/** อ่านไฟล์ NOVA 1 ไฟล์: (1) หัวแท็บ+หัวตาราง ช่วงเดียว A2:BZ12 (2) 4 คอลัมน์ หมวด/ต้นทุน/Supplier/หมายเหตุจาก BOM */
 function readNovaFile_(f) {
   var tabs = listTabs_(f.fileId).filter(function (t) { return eIsNovaJobTab_(t.title); });
   var got = batchGet_(f.fileId, tabs.map(function (t) { return q_(t.title) + '!A2:BZ12'; }));
@@ -46,22 +47,24 @@ function readNovaFile_(f) {
     var c = eNovaCols_(hdr);
     if (c.cost < 0) { meta.push({ t: t, head: head, skip: 'ไม่พบคอลัมน์ ต้นทุนเข้าจ๊อบ' }); return; }
     var start = hdrRow + 1;
-    var m = { t: t, head: head, idx: want.length, hasV: c.vendor >= 0 };
+    var m = { t: t, head: head, idx: want.length, iV: -1, iN: -1 };
     want.push(q_(t.title) + '!' + colA1_(c.cat) + start + ':' + colA1_(c.cat));
     want.push(q_(t.title) + '!' + colA1_(c.cost) + start + ':' + colA1_(c.cost));
-    if (c.vendor >= 0) want.push(q_(t.title) + '!' + colA1_(c.vendor) + start + ':' + colA1_(c.vendor));
+    if (c.vendor >= 0) { m.iV = want.length; want.push(q_(t.title) + '!' + colA1_(c.vendor) + start + ':' + colA1_(c.vendor)); }
+    if (c.note >= 0)   { m.iN = want.length; want.push(q_(t.title) + '!' + colA1_(c.note) + start + ':' + colA1_(c.note)); }
     meta.push(m);
   });
   var cols = batchGet_(f.fileId, want);
   var out = [], skipped = [];
   meta.forEach(function (m) {
     if (m.skip) { skipped.push({ tab: m.t.title, why: m.skip }); return; }
-    var cat = cols[m.idx] || [], cost = cols[m.idx + 1] || [], ven = m.hasV ? (cols[m.idx + 2] || []) : [];
+    var cat = cols[m.idx] || [], cost = cols[m.idx + 1] || [],
+        ven = m.iV >= 0 ? (cols[m.iV] || []) : [], note = m.iN >= 0 ? (cols[m.iN] || []) : [];
     var n = Math.max(cat.length, cost.length), rows = [];
     for (var i = 0; i < n; i++) {
       var cv = (cost[i] || [])[0];
       if (cv === undefined || cv === '' || cv === 0) continue;          // เก็บเฉพาะบรรทัดที่มีต้นทุน (ไฟล์เล็กลง)
-      rows.push([(cat[i] || [])[0], (ven[i] || [])[0], cv]);
+      rows.push([(cat[i] || [])[0], (ven[i] || [])[0], cv, (note[i] || [])[0] || '']);
     }
     out.push({ title: m.t.title, sheetId: m.t.sheetId, head: m.head, rows: rows });
   });
@@ -77,6 +80,8 @@ function gatherAll_() {
   var t1 = Date.now();
   input.salesJT = readTab_(CFG.MASTER, CFG.TAB.SALES_JT);
   input.salesJM = readTab_(CFG.MASTER, CFG.TAB.SALES_JM);
+  try { input.histCost = readTab_(CFG.MASTER, CFG.TAB.HIST_COST); }      // ต้นทุนจัดซื้อย้อนหลัง ปี 65–68
+  catch (e) { input.histCost = []; input.histErr = String(e.message || e); }
   timing.sales = Date.now() - t1;
 
   var t2 = Date.now();
@@ -118,6 +123,8 @@ function rebuild_() {
     var tg = Date.now() - t0;
     var snap = eBuildSnapshot_(input);
     snap.version = COSTING_VERSION;
+    snap.masterId = CFG.MASTER;
+    if (input.histErr) snap.diag.notes.push('อ่านแท็บ Cost Purchase 2022-2025 ไม่ได้: ' + input.histErr);
     snap.timing = input._timing; snap.timing.gather = tg; snap.timing.total = Date.now() - t0;
     snap.diag.novaSkipped = [];
     input.nova.forEach(function (f) { (f.skipped || []).forEach(function (s) { s.file = f.fileName; snap.diag.novaSkipped.push(s); }); });
@@ -182,7 +189,7 @@ function getJobPurchase(token, code) {
   var json = snapLoad_(); if (!json) throw new Error('ยังไม่มีข้อมูล กรุณากดอัปเดต');
   var snap = JSON.parse(json);
   var idx = snap.novaIndex[code] || [];
-  var keep = ['หมวด', 'ประเภท', 'Code', 'PART NAME', 'DESCRIPTION', "Q'TY", 'หน่วย(BOM)', 'MY ACC CODE', 'MY ACC GOOD NAME',
+  var keep = ['หมวด', 'ประเภท', 'Code', 'PART NAME', 'DESCRIPTION', 'หมายเหตุจาก BOM', "Q'TY", 'หน่วย(BOM)', 'MY ACC CODE', 'MY ACC GOOD NAME',
               'มีของ/ไม่มีของ', 'จำนวนที่ต้องซื้อ', 'POR NO.', 'สรุป Supplier', 'Price/EA', 'วันที่รับสินค้า', 'ต้นทุนเข้าจ๊อบ', 'เปิด PO'];
   var tabs = idx.map(function (x) {
     var v = readTab_(x.fileId, x.title, 'A1:BZ');
@@ -204,7 +211,7 @@ function getJobPurchase(token, code) {
     }
     return { title: x.title, units: x.units, fileId: x.fileId, sheetId: x.sheetId, cols: keep, rows: rows };
   });
-  return { code: code, tabs: tabs, novaUrl: PropertiesService.getScriptProperties().getProperty('NOVA_URL') || '' };
+  return { code: code, tabs: tabs, novaUrl: PropertiesService.getScriptProperties().getProperty('NOVA_URL') || CFG.NOVA_URL || '' };
 }
 
 /** วันทำงานรายวันของจ๊อบ (สด จาก JOBTRACK + Timesheet HR) */

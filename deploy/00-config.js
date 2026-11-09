@@ -9,8 +9,8 @@
  *  - ป้ายเวอร์ชันบนเว็บดึงจาก COSTING_VERSION ตัวนี้ตัวเดียว (หลักฐานว่า deploy ขึ้นจริง)
  */
 
-var COSTING_VERSION = 'v1.1.3';
-var COSTING_BUILD   = '2026-11-07';
+var COSTING_VERSION = 'v1.2.0';
+var COSTING_BUILD   = '2026-11-09';
 
 var CFG = {
   // ไฟล์กลางของ NOVA (USERS · SETTINGS · REGISTRY · Budget Cost Sales)
@@ -23,8 +23,11 @@ var CFG = {
   TAB: {
     USERS: 'USERS', REGISTRY: 'REGISTRY', SALES_JT: 'Budget Cost Sales JT', SALES_JM: 'Budget Cost Sales JM',
     JOB_MASTER: 'JOB_MASTER', HR_WIDE: 'ACTUAL_WIDE', SALE_BUDGET: 'Sale Budget', EST_BUDGET: 'Estimate Budget',
-    CONTR_HR: 'Cost ผรม to HR', CONTR_STT_PREFIX: 'Cost ผรม พนักงาน STT'
+    CONTR_HR: 'Cost ผรม to HR', CONTR_STT_PREFIX: 'Cost ผรม พนักงาน STT',
+    HIST_COST: 'Cost Purchase 2022-2025'            // MASTER จัดซื้อ: ต้นทุนจ๊อบย้อนหลัง ปี 65–68
   },
+  // เว็บ NOVA ใหญ่ (ต้องล็อกอินด้วยบัญชี suteetankers.com) — เปลี่ยนได้ที่ Script Property NOVA_URL
+  NOVA_URL : 'https://script.google.com/a/macros/suteetankers.com/s/AKfycbwBox9KkE5P6AIPNoG_xlY9G70TZTaZaBIf3MwnKBFHtSt_3i5dyxsgsFhtrU9Ofxk3Kw/exec',
   SNAP_NAME : 'STT-NOVA-Costing-SNAPSHOT.json',   // ไฟล์เก็บผลคำนวณล่าสุด (ใน Drive ของเจ้าของสคริปต์)
   AUTO_MIN  : 10                                  // อัปเดตอัตโนมัติทุกกี่นาที
 };
