@@ -40,6 +40,10 @@ const man = JSON.parse(read('appsscript.json'));
 ok(man.dependencies.enabledAdvancedServices.some(s => s.serviceId === 'sheets'), 'manifest ต้องเปิด Sheets API');
 ok(man.webapp && man.webapp.executeAs === 'USER_DEPLOYING', 'web app ต้อง execute as เจ้าของ');
 
+/* ---------- 1.4) ชื่อแท็บใน config ต้องเป็นชื่อจริงบน Google Sheets (บทเรียน v1.3.0: ใช้ชื่อจาก xlsx ที่ตัด "/" ทิ้ง) ---------- */
+{ const cfg = fs.readFileSync(path.join(D, '00-config.js'), 'utf8');
+  ok(/WIP:\s*'All WIP JT\/JM'/.test(cfg), "CFG.TAB.WIP ต้องเป็น 'All WIP JT/JM' (ชื่อจริงมี /)");
+  ok(/function readTabLoose_/.test(fs.readFileSync(path.join(D, '02-io.js'), 'utf8')), 'ต้องมี readTabLoose_ สำรองกรณีชื่อแท็บเพี้ยน'); }
 /* ---------- 1.5) ชื่อแท็บ NOVA จริง (บทเรียน v1.1.1: บนเว็บมี "/" แต่ xlsx ตัดทิ้ง) ---------- */
 {
   const E0 = require(path.join(D, '10-engine.js'));
@@ -113,6 +117,9 @@ if (DATA && fs.existsSync(path.join(DATA, 'fixture.json'))) {
     ['JT-69/0002', 'JT-69/0003'].forEach(c => ok(near(J[c].pTotal, sh / 2 + own[c], 0.02), c + ' = ส่วนกลาง/2 + บรรทัดของคันนี้ (' + (sh / 2 + own[c]).toFixed(2) + ' ได้ ' + J[c].pTotal + ')'));
     ok(near(J['JT-69/0002'].pTotal + J['JT-69/0003'].pTotal, 3602077.22, 0.02), '0002 + 0003 รวมกลับเท่าแท็บ');
   })();
+  // v1.3.1 ทุกจ๊อบในไฟล์ขายต้องอยู่ในระบบ (ดูตามปีเปิดจ๊อบได้ครบ)
+  (function () { const v = inp.salesJT, h = v[0].indexOf('DocuNo'); let miss = 0, n = 0; for (let i = 1; i < v.length; i++) { const c = String(v[i][h] || '').trim(); if (/^[A-Z]+-\d{2}\//.test(c)) { n++; if (!J[c]) miss++; } } ok(n > 1200 && miss === 0, 'จ๊อบใน Budget Cost Sales JT ต้องอยู่ครบ (ขาด ' + miss + ' / ' + n + ')'); })();
+  ok(s.jobs.filter(j => j.open && j.open.substr(0, 4) === '2019').length > 150, 'ต้องมีจ๊อบเปิดปี 2562 (2019) จากไฟล์ขาย');
   // v1.3.0 เดือนเปิดจ๊อบ + Model (All WIP JTJM)
   ok(J['JT-69/0002'].open === '2026-01-20' && J['JT-69/0002'].openSrc === 'วันที่เอกสารขาย', 'JT-69/0002 เปิดจ๊อบ = DocuDate 2026-01-20');
   ok(J['JT-66/0094'].model === 'LLPG-52400-01A', 'JT-66/0094 Model จาก All WIP JTJM');

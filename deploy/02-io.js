@@ -34,6 +34,19 @@ function readTab_(fileId, tab, a1) {
   return (r && r.values) ? r.values : [];
 }
 
+/**
+ * อ่านแท็บแบบทนชื่อเพี้ยน (v1.3.1: ชื่อจริงคือ "All WIP JT/JM" แต่ xlsx ตัด "/" → ตั้งชื่อผิดเป็น All WIP JTJM)
+ * ลองชื่อตรงก่อน → ไม่ได้ ค้นจากรายชื่อแท็บจริง (ไม่สนช่องว่าง/ตัวพิมพ์) แล้วอ่านใหม่
+ */
+function readTabLoose_(fileId, tab, a1) {
+  try { return readTab_(fileId, tab, a1); } catch (e) {
+    var key = function (x) { return String(x).replace(/[\s\u00a0\u200b\/]+/g, '').toLowerCase(); };   // xlsx ตัด "/" ทิ้ง
+    var hit = listTabs_(fileId).filter(function (t) { return key(t.title) === key(tab); })[0];
+    if (!hit) throw new Error('ไม่พบแท็บ "' + tab + '" (' + (e.message || e) + ')');
+    return readTab_(fileId, hit.title, a1 || 'A1:ZZ');
+  }
+}
+
 /** รายชื่อแท็บ + sheetId */
 function listTabs_(fileId) {
   var r = withRetry_(function () { return Sheets.Spreadsheets.get(fileId, { fields: 'sheets.properties(sheetId,title)' }); });

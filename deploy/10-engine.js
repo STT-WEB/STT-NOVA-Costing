@@ -276,14 +276,14 @@ function eBuildSnapshot_(input) {
     }
   })();
 
-  /* ---- 2.0b ทะเบียน Model (MASTER แท็บ "All WIP JTJM") ----
+  /* ---- 2.0b ทะเบียน Model (MASTER แท็บ "All WIP JT/JM") ----
    * JT → คอลัมน์ Model (JT) · JM → goodcode (JM) + goodname (JM) = ประเภทงานซ่อม
    * ใช้ทำหน้า "ต้นทุนตาม Model" และเติมวันเริ่ม/ส่งมอบที่ JOB_MASTER ไม่มี (เบียร์ขอ 9 พ.ย.) */
   var wip = {};
   D.wipCount = 0;
   (function () {
     var v = input.wip || [];
-    var h = eFindHdrRow_(v, 'JOB CODE', 5); if (h < 0) { if (v.length) D.notes.push('ไม่พบหัวตาราง JOB CODE ในแท็บ All WIP JTJM'); return; }
+    var h = eFindHdrRow_(v, 'JOB CODE', 5); if (h < 0) { if (v.length) D.notes.push('ไม่พบหัวตาราง JOB CODE ในแท็บ All WIP JT/JM'); return; }
     var hdr = v[h];
     var iC = eColExact_(hdr, 'JOB CODE'), iM = eCol_(hdr, ['Model (JT)']), iG = eCol_(hdr, ['goodcode (JM)']), iGN = eCol_(hdr, ['goodname (JM)']),
         iS = eCol_(hdr, ['START DATE']), iD = eCol_(hdr, ['LATEST DATE DELIVERY']), iP = eCol_(hdr, ['TOTAL PROGRESS']);
@@ -421,28 +421,35 @@ function eBuildSnapshot_(input) {
     var v = input.salesJT || [];
     var h = eFindHdrRow_(v, 'DocuNo', 5); if (h < 0) { D.notes.push('ไม่พบหัวตาราง DocuNo ใน Budget Cost Sales JT'); return; }
     var iNo = eCol_(v[h], ['DocuNo']), iBC = eCol_(v[h], ['Budget cost']), iBL = eCol_(v[h], ['Budget labour']),
-        iSV = eCol_(v[h], ['Sales Value no vat', 'Sales Value']), iDt = eColExact_(v[h], 'DocuDate');
+        iSV = eCol_(v[h], ['Sales Value no vat', 'Sales Value']), iDt = eColExact_(v[h], 'DocuDate'), iCu = eCol_(v[h], ['custName']);
     var seen = {};
     for (var i = h + 1; i < v.length; i++) {
       var code = eJob_(v[i][iNo]); if (!eIsJob_(code)) continue;
       var sv = eNum_(v[i][iSV]);
       if (seen[code]) { D.salesDupJT.push(code); continue; }   // ใช้แถวแรก
-      seen[code] = { sale: sv, bc: eNum_(v[i][iBC]), bl: eNum_(v[i][iBL]), dt: iDt >= 0 ? eDate_(v[i][iDt]) : '' };
+      seen[code] = { sale: sv, bc: eNum_(v[i][iBC]), bl: eNum_(v[i][iBL]), dt: iDt >= 0 ? eDate_(v[i][iDt]) : '', cust: iCu >= 0 ? eStr_(v[i][iCu]) : '' };
     }
     input._saleJT = seen;
   })();
   (function () {
     var v = input.salesJM || [];
     var h = eFindHdrRow_(v, 'DocuNo', 5); if (h < 0) { D.notes.push('ไม่พบหัวตาราง DocuNo ใน Budget Cost Sales JM'); return; }
-    var iNo = eCol_(v[h], ['DocuNo']), iAmt = eCol_(v[h], ['billaftrDiscAmnt']), iDt = eColExact_(v[h], 'DocuD');
-    var s = {}, dt = {};
+    var iNo = eCol_(v[h], ['DocuNo']), iAmt = eCol_(v[h], ['billaftrDiscAmnt']), iDt = eColExact_(v[h], 'DocuD'), iCu = eCol_(v[h], ['custName']);
+    var s = {}, dt = {}, cu = {};
     for (var i = h + 1; i < v.length; i++) {
       var code = eJob_(v[i][iNo]); if (!eIsJob_(code)) continue;
       s[code] = (s[code] || 0) + eNum_(v[i][iAmt]);              // JM ใบเดียวอาจหลายบรรทัด → รวม
       if (!dt[code] && iDt >= 0) dt[code] = eDate_(v[i][iDt]);
+      if (!cu[code] && iCu >= 0) cu[code] = eStr_(v[i][iCu]);
     }
-    input._saleJM = s; input._saleJMdt = dt;
+    input._saleJM = s; input._saleJMdt = dt; input._saleJMcu = cu;
   })();
+  // จ๊อบที่มีในทะเบียนขาย (Budget Cost Sales JT/JM) ต้องอยู่ในระบบด้วย แม้ยังไม่มีต้นทุน
+  // เบียร์ขอ 9 พ.ย.: ดูราคาขาย/ต้นทุนตามปีเปิดจ๊อบ (DocuDate) ได้ครบทุกปีที่มีในไฟล์ขาย
+  D.salesOnly = 0;
+  [input._saleJT || {}, input._saleJM || {}].forEach(function (m) {
+    Object.keys(m).forEach(function (code) { if (!J[code]) D.salesOnly++; job_(code); });
+  });
 
   /* ---- 2.3 งบค่าแรง (Sale Budget A:C) + Estimate Budget ---- */
   var laborBudget = {}, estLabor = {};
@@ -744,7 +751,7 @@ function eBuildSnapshot_(input) {
       if (mi.status) r.progress = mi.status;
     }
     var wi = wip[code];
-    if (wi) {                                    // All WIP JTJM: Model มาก่อน · วันที่ใช้เติมช่องที่ว่าง
+    if (wi) {                                    // All WIP JT/JM: Model มาก่อน · วันที่ใช้เติมช่องที่ว่าง
       if (wi.model) r.model = wi.model;
       if (wi.mname) r.mname = wi.mname;
       if (!r.start && wi.start) r.start = wi.start;
@@ -752,6 +759,7 @@ function eBuildSnapshot_(input) {
       if (!r.delivery && wi.delivery && /ส่งมอบ/.test(wi.progress)) r.delivery = wi.delivery;
     }
     var sj = input._saleJT && input._saleJT[code];
+    if (!r.name) r.name = (sj && sj.cust) || (input._saleJMcu && input._saleJMcu[code]) || '';
     if (sj) { r.sale = sj.sale; r.saleSrc = 'Sales JT'; r.budgetCost = sj.bc; }
     else if (input._saleJM && input._saleJM[code] !== undefined) { r.sale = input._saleJM[code]; r.saleSrc = 'Sales JM'; }
     // วันเปิดจ๊อบ = วันที่เอกสารขาย (DocuDate) · ไม่มี → วันเริ่มงานใน JOB_MASTER (เบียร์ขอ 9 พ.ย.: ดูตามเดือนเปิดจ๊อบเหมือน NOVA)
@@ -783,7 +791,7 @@ function eBuildSnapshot_(input) {
     }
     var hasBuy = r.pTotal !== 0, hasLab = (r.labor + r.laborEst + r.laborOpenPartial) !== 0 || r.cHRofficial !== 0;
     r.srcKind = hasBuy && hasLab ? 'จัดซื้อ + ค่าแรง' : hasBuy ? 'จัดซื้ออย่างเดียว' : hasLab ? 'ค่าแรงอย่างเดียว' : 'ยังไม่มีต้นทุน';
-    if (!r.inMaster && r.pSrc !== 'MASTER 2022-2025') r.flags.push('ไม่อยู่ใน JOB_MASTER');   // จ๊อบเก่าปี 65–68 ไม่อยู่ในทะเบียน HR เป็นปกติ
+    if (!r.inMaster && r.pSrc !== 'MASTER 2022-2025' && (hasBuy || hasLab)) r.flags.push('ไม่อยู่ใน JOB_MASTER');   // จ๊อบเก่าปี 65–68 ไม่อยู่ในทะเบียน HR เป็นปกติ
     if (/ยกเลิก/.test(r.progress || '') && (hasBuy || hasLab)) r.flags.push('สถานะยกเลิก แต่มีต้นทุน');
     if (r.pShared) r.flags.push('แบ่งจัดซื้อจากแท็บรวม ' + r.pShared + ' คัน');
     if (r.cHRdup) r.flags.push('ตัด ผรม ซ้ำ ' + r.cHRdup.toLocaleString('en-US'));

@@ -11,7 +11,7 @@ Dashboard ต้นทุนงานจริง: จัดซื้อ (NOVA �
 | แหล่ง | File ID / ที่มา | แท็บ |
 |---|---|---|
 | NOVA จัดซื้อ | REGISTRY (source=NOVA, Active≠N) — ห้ามฝัง ID | ทุกแท็บจ๊อบ: หมวด · สรุป Supplier · ต้นทุนเข้าจ๊อบ |
-| MASTER | `1ZCKb_KRECWRSRaObBQz4nDUmwazvV2lhoPMj2O5j744` | USERS · REGISTRY · Budget Cost Sales JT/JM (DocuDate = เดือนเปิดจ๊อบ) · Cost Purchase 2022-2025 · All WIP JTJM (Model) |
+| MASTER | `1ZCKb_KRECWRSRaObBQz4nDUmwazvV2lhoPMj2O5j744` | USERS · REGISTRY · Budget Cost Sales JT/JM (DocuDate = เดือนเปิดจ๊อบ) · Cost Purchase 2022-2025 · All WIP JT/JM (Model) |
 | HR JOB COST MASTER | `10u8sLbe6dtGtFtWwAMruvAgrawDOScqEBmJRA3avPcM` | JOB_MASTER · ACTUAL_WIDE · Sale Budget A:C · Estimate Budget · Cost ผรม to HR · Cost ผรม พนักงาน STT… · SRC_YYYY_MM |
 | JOBTRACK | `1ZPl3uVRtM5r4sPA-yX1OwTyp34XCTIcKRC0Sx8qsr9s` | Job_Log_YYYY_MM (พ.ศ.) · TIMESHEET_DIRECT… |
 
@@ -39,7 +39,7 @@ GitHub: `STT-WEB/STT-NOVA-Costing` (เบียร์สร้าง repo เ�
 - อัปเดตล้ม → Script Property `BUILD_ERR` · หน้าเว็บเรียก `getStatus` แล้วโชว์แดงบนหัว
 
 ## 4. ทดสอบกับข้อมูลจริง (ในคลาวด์ของ Candy)
-⚠️ **บทเรียน v1.1.1:** xlsx ที่ export ตัด "/" ออกจากชื่อแท็บ (`JT-69/0001` → `JT-690001`) → make_fixture.py คืน "/" ให้แล้ว
+⚠️ **บทเรียน v1.1.1 + v1.3.0:** xlsx ที่ export ตัด "/" ออกจากชื่อแท็บ (`JT-69/0001` → `JT-690001` · `All WIP JT/JM` → `All WIP JTJM`) → ชื่อแท็บใหม่ทุกตัวต้องเช็คชื่อจริงใน Google Sheets ก่อน (เปิดดูใน Chrome) · อ่านแท็บเสริมด้วย `readTabLoose_`
 ต้องรัน `_tests/sim-gather.js` (จำลอง Sheets API + โค้ดเซิร์ฟเวอร์จริง) ทุกครั้งที่แก้ 02-io / 20-build / ตัวแปลงชื่อแท็บ
 หลังขึ้นระบบ: ดาวน์โหลด `STT-NOVA-Costing-SNAPSHOT.json` จาก Drive มาเช็ค diag.novaFiles (ทุกไฟล์ต้อง tabs > 0)
 1. ดาวน์โหลด xlsx ของ MASTER / HR / JOBLOG / STT-DB-JT-2569 / STT-DB-JM-2569 ด้วย Drive connector

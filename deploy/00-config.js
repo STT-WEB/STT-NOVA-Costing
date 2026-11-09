@@ -9,7 +9,7 @@
  *  - ป้ายเวอร์ชันบนเว็บดึงจาก COSTING_VERSION ตัวนี้ตัวเดียว (หลักฐานว่า deploy ขึ้นจริง)
  */
 
-var COSTING_VERSION = 'v1.3.0';
+var COSTING_VERSION = 'v1.3.1';
 var COSTING_BUILD   = '2026-11-09';
 
 var CFG = {
@@ -24,7 +24,7 @@ var CFG = {
     USERS: 'USERS', REGISTRY: 'REGISTRY', SALES_JT: 'Budget Cost Sales JT', SALES_JM: 'Budget Cost Sales JM',
     JOB_MASTER: 'JOB_MASTER', HR_WIDE: 'ACTUAL_WIDE', SALE_BUDGET: 'Sale Budget', EST_BUDGET: 'Estimate Budget',
     CONTR_HR: 'Cost ผรม to HR', CONTR_STT_PREFIX: 'Cost ผรม พนักงาน STT',
-    WIP: 'All WIP JTJM',                            // MASTER: Model (JT) / ประเภทงานซ่อม (JM) / วันเริ่ม-ส่งมอบ
+    WIP: 'All WIP JT/JM',                              // MASTER: Model (JT) / ประเภทงานซ่อม (JM) / วันเริ่ม-ส่งมอบ
     HIST_COST: 'Cost Purchase 2022-2025'            // MASTER จัดซื้อ: ต้นทุนจ๊อบย้อนหลัง ปี 65–68
   },
   // เว็บ NOVA ใหญ่ (ต้องล็อกอินด้วยบัญชี suteetankers.com) — เปลี่ยนได้ที่ Script Property NOVA_URL

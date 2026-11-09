@@ -80,9 +80,9 @@ function gatherAll_() {
   var t1 = Date.now();
   input.salesJT = readTab_(CFG.MASTER, CFG.TAB.SALES_JT);
   input.salesJM = readTab_(CFG.MASTER, CFG.TAB.SALES_JM);
-  try { input.histCost = readTab_(CFG.MASTER, CFG.TAB.HIST_COST); }      // ต้นทุนจัดซื้อย้อนหลัง ปี 65–68
+  try { input.histCost = readTabLoose_(CFG.MASTER, CFG.TAB.HIST_COST); }      // ต้นทุนจัดซื้อย้อนหลัง ปี 65–68
   catch (e) { input.histCost = []; input.histErr = String(e.message || e); }
-  try { input.wip = readTab_(CFG.MASTER, CFG.TAB.WIP); }                  // Model / ประเภทงานซ่อม
+  try { input.wip = readTabLoose_(CFG.MASTER, CFG.TAB.WIP); }                  // Model / ประเภทงานซ่อม
   catch (e) { input.wip = []; input.wipErr = String(e.message || e); }
   timing.sales = Date.now() - t1;
 
@@ -126,7 +126,7 @@ function rebuild_() {
     var snap = eBuildSnapshot_(input);
     snap.version = COSTING_VERSION;
     snap.masterId = CFG.MASTER;
-    if (input.wipErr) snap.diag.notes.push('อ่านแท็บ All WIP JTJM ไม่ได้: ' + input.wipErr);
+    if (input.wipErr) snap.diag.notes.push('อ่านแท็บ All WIP JT/JM ไม่ได้: ' + input.wipErr);
     if (input.histErr) snap.diag.notes.push('อ่านแท็บ Cost Purchase 2022-2025 ไม่ได้: ' + input.histErr);
     snap.timing = input._timing; snap.timing.gather = tg; snap.timing.total = Date.now() - t0;
     snap.diag.novaSkipped = [];

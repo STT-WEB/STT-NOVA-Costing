@@ -97,6 +97,7 @@ function prep() {
     j.yy = (String(j.code).match(/-(\d{2})\//) || [])[1] || '';
     j.typeG = TYPES.indexOf(j.type) >= 0 ? j.type : 'อื่นๆ';
     j.status = j.progress || (j.delivery ? '' : '');
+    j.has = !!(j.sale || j.goods || j.p.c11 || j.labor || j.laborEst || j.cHR);   // มีราคาขายหรือต้นทุนอย่างใดอย่างหนึ่ง
   });
   s.procByJob = {};
   s.proc.forEach(function (p) { (s.procByJob[p[0]] = s.procByJob[p[0]] || []).push(p); });
@@ -131,8 +132,6 @@ function jobsInScope(noYear) {
 function renderBar() {
   var b = $('gbar');
   if (S.page === 'chk') { b.innerHTML = ''; return; }
-  var years = {}; S.snap.jobs.forEach(function (j) { if (j.yy) years[j.yy] = 1; });
-  var ys = Object.keys(years).sort().reverse();
   var h = [];
   var fixedCols = S.page === 'ov' || S.page === 'model';     // 2 หน้านี้โชว์ จัดซื้อ / HR / รวม พร้อมกันเสมอ
   if (S.page !== 'hr' && S.page !== 'proc' && !fixedCols) {
@@ -141,17 +140,16 @@ function renderBar() {
   }
   h.push('<label class="tog" title="เดือนที่ HR ยังไม่ปิดงวด: ชม.จาก JOBTRACK × อัตราเฉลี่ยของจ๊อบ"><input type="checkbox" id="cbEst"' + (S.est ? ' checked' : '') + '>รวมค่าแรงประมาณการ (เดือนที่ HR ยังไม่ปิดงวด)</label>');
   h.push('<span style="flex-basis:100%;height:0"></span>');
-  if (S.page !== 'ov') {                                      // หน้าภาพรวมเลือกปีตามเดือนเปิดจ๊อบ/ส่งมอบเอง
-    h.push('<span class="lbl">ปีจ๊อบ</span>');
-    ys.forEach(function (y) { h.push('<button class="chip' + (S.years[y] ? ' on' : '') + '" data-yy="' + y + '">25' + y + '</button>'); });
-    h.push('<button class="chip' + (!Object.keys(S.years).length ? ' on' : '') + '" data-yy="*">ทุกปี</button>');
-  }
-  h.push('<span class="lbl" style="margin-left:10px">ประเภท</span>');
-  TYPES.forEach(function (t) {
-    var n = S.snap.jobs.filter(function (j) { return j.typeG === t && (S.page === 'ov' || !Object.keys(S.years).length || S.years[j.yy]); }).length;
-    if (!n) return;
-    h.push('<button class="chip' + (S.types[t] ? ' on' : '') + '" data-ty="' + t + '">' + t + '<span class="k">' + n + '</span></button>');
-  });
+  // ---- Dropdown ปี + ประเภท (เบียร์ขอ 9 พ.ย.) ----
+  var yLbl = S.page === 'ov' ? (S.ovAxis === 'del' ? 'ปีส่งมอบ' : 'ปีเปิดจ๊อบ') : 'ปีจ๊อบ';
+  var yCnt = {}; S.snap.jobs.forEach(function (j) { var y = S.page === 'ov' ? ovYY(j) : j.yy; if (y && j.has) yCnt[y] = (yCnt[y] || 0) + 1; });
+  var ySel = Object.keys(S.years)[0] || '*';
+  h.push('<label class="dd"><span class="lbl">' + yLbl + '</span><select id="selY"><option value="*"' + (ySel === '*' ? ' selected' : '') + '>ทุกปี</option>' +
+    yearOpts().map(function (y) { return '<option value="' + y + '"' + (ySel === y ? ' selected' : '') + '>' + (2500 + +y) + (yCnt[y] ? ' (' + nf(yCnt[y]) + ' จ๊อบ)' : '') + '</option>'; }).join('') + '</select></label>');
+  var tSel = typeSelKey();
+  var tCnt = {}; S.snap.jobs.forEach(function (j) { if (j.has) tCnt[j.typeG] = (tCnt[j.typeG] || 0) + 1; });
+  var tOpts = [['*', 'ทุกประเภท'], ['JMALL', 'JM ทั้งหมด (JM · JMI · JMS · JMC · JMT)']].concat(TYPES.filter(function (t) { return tCnt[t]; }).map(function (t) { return [t, t + ' (' + nf(tCnt[t]) + ')']; }));
+  h.push('<label class="dd"><span class="lbl">ประเภทงาน</span><select id="selT">' + tOpts.map(function (o) { return '<option value="' + o[0] + '"' + (tSel === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>');
   h.push('<input class="srch" id="gq" placeholder="🔎 ค้นหารหัสจ๊อบ / ชื่อลูกค้า / Model" value="' + esc(S.q) + '">');
   if (fixedCols) h.push('<span class="viewdef" style="flex-basis:100%">📐 ต้นทุนจัดซื้อ = หมวด 1–11 (รวม ผรม NOVA) · ต้นทุน HR = ค่าแรง STT' + (S.est ? ' + ประมาณการ' : '') + ' + ผรม ฝั่ง HR ที่ไม่ซ้ำ · รวมต้นทุน = ต้นทุนเต็ม ④</span>');
   else if (S.page !== 'hr' && S.page !== 'proc') {
@@ -160,27 +158,27 @@ function renderBar() {
   }
   b.innerHTML = h.join('');
   b.querySelectorAll('[data-view]').forEach(function (x) { x.onclick = function () { S.view = x.getAttribute('data-view'); renderAll(); }; });
-  b.querySelectorAll('[data-yy]').forEach(function (x) {
-    x.onclick = function () {
-      var y = x.getAttribute('data-yy');
-      if (y === '*') S.years = {}; else { if (S.years[y]) delete S.years[y]; else S.years[y] = 1; }
-      renderAll();
-    };
-  });
-  b.querySelectorAll('[data-ty]').forEach(function (x) {
-    x.onclick = function (e) {
-      var t = x.getAttribute('data-ty');
-      if (e.shiftKey || e.ctrlKey || e.metaKey) { S.types = {}; S.types[t] = 1; }    // Ctrl+คลิก = เลือกอันเดียว
-      else if (S.types[t]) delete S.types[t]; else S.types[t] = 1;
-      renderAll();
-    };
-  });
+  $('selY').onchange = function () { S.years = {}; if (this.value !== '*') S.years[this.value] = 1; S.ovOpen = ''; renderAll(); };
+  $('selT').onchange = function () { var v = this.value; S.types = {}; TYPES.forEach(function (t) { if (v === '*' || (v === 'JMALL' ? JM_ALL.indexOf(t) >= 0 : t === v)) S.types[t] = 1; }); S.ovOpen = ''; renderAll(); };
   $('cbEst').onchange = function () { S.est = this.checked; renderAll(); };
   var tm = null;
   $('gq').oninput = function () { var v = this.value; clearTimeout(tm); tm = setTimeout(function () { S.q = v; renderPage(); }, 250); };
 }
 
 function renderAll() { renderTop(); renderBar(); renderPage(); }
+var JM_ALL = ['JM', 'JMI', 'JMS', 'JMC', 'JMT'];
+/** ปีที่เลือกได้ (พ.ศ. 2 หลัก) — จากรหัสจ๊อบ + ปีเปิดจ๊อบ/ส่งมอบ · ตัดปีผิดปกติ (เช่น 78, 11) */
+function yearOpts() {
+  var cur = (new Date().getFullYear() + 543) % 100, y = {};
+  S.snap.jobs.forEach(function (j) { if (!j.has) return; [j.yy, ovYY(j, 'open'), ovYY(j, 'del')].forEach(function (v) { if (v && +v >= 60 && +v <= cur + 1) y[v] = 1; }); });
+  return Object.keys(y).sort().reverse();
+}
+function typeSelKey() {
+  var on = TYPES.filter(function (t) { return S.types[t]; });
+  if (on.length === TYPES.length || !on.length) return '*';
+  if (on.length === JM_ALL.length && JM_ALL.every(function (t) { return S.types[t]; })) return 'JMALL';
+  return on.length === 1 ? on[0] : '*';
+}
 
 function renderTop() {
   var s = S.snap, at = s.builtAt ? new Date(s.builtAt) : null;
